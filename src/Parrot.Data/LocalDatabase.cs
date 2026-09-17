@@ -21,7 +21,13 @@ public sealed class LocalDatabase
 
     public string Path { get; }
 
-    public string ConnectionString => new SqliteConnectionStringBuilder { DataSource = Path }.ToString();
+    /// <summary>DefaultTimeout 是给全量词库导入让路的：那 77 万行在一个长事务里，
+    /// 默认 0 秒等锁会让导入期间的任何一次刷新直接抛 database is locked。</summary>
+    public string ConnectionString => new SqliteConnectionStringBuilder
+    {
+        DataSource = Path,
+        DefaultTimeout = 30,
+    }.ToString();
 
     public SqliteConnection Open()
     {

@@ -1,10 +1,19 @@
 # 下载 ECDICT 全量词表并导入本机 Parrot 数据库。
 # 用法：powershell -File scripts\fetch-ecdict.ps1
-# 源优先级：官方 raw → ghproxy 加速镜像（部分网络直连 GitHub raw 不稳定）。约 200MB，需要几分钟。
+# 源优先级：官方 raw → ghproxy 加速镜像（部分网络直连 GitHub raw 不稳定）。约 65MB，需要几分钟。
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $out = Join-Path $repoRoot 'tools\ecdict.csv'
 New-Item -ItemType Directory -Force (Split-Path $out) | Out-Null
+
+# 完整性判据：体积过小是错误页，末字节非换行则是中断的截断文件。
+function Test-EcdictCsv([string]$path) {
+    if (-not (Test-Path $path)) { return $false }
+    if ((Get-Item $path).Length -lt 40MB) { return $false }
+    $fs = [System.IO.File]::OpenRead($path)
+    try { $fs.Seek(-1, [System.IO.SeekOrigin]::End) | Out-Null; $fs.ReadByte() -eq 10 }
+    finally { $fs.Dispose() }
+}
 
 $candidates = @(
     'https://raw.githubusercontent.com/skywind3000/ECDICT/master/ecdict.csv',
@@ -17,8 +26,8 @@ foreach ($u in $candidates) {
     Write-Host "尝试 $u"
     try {
         Invoke-WebRequest -Uri $u -OutFile $out -TimeoutSec 600
-        if ((Get-Item $out).Length -gt 100MB) { $ok = $true; break }
-        Write-Host "  文件过小（疑似错误页），换源"
+        if (Test-EcdictCsv $out) { $ok = $true; break }
+        Write-Host "  文件不完整（疑似错误页或中断），换源"
     } catch { Write-Host "  失败：$($_.Exception.Message)" }
 }
 if (-not $ok) {

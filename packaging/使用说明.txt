@@ -1,4 +1,4 @@
-鹦鹉 Parrot — macOS 使用说明（v4）
+鹦鹉 Parrot — macOS 使用说明（v5）
 （鹦鹉学舌，练嘴即练耳——跟读、复读、拼写，语言学习就这么个路子；曾用名"词岸 WordShore""一苇 Reever"）
 （工程标识 StudyEnglish 已整体改名为 Parrot；首次启动会自动把旧数据目录搬过来，词库/学习记录/缓存无缝保留）
 
@@ -36,6 +36,16 @@
   随机把单词里几个字母遮成空格让你回填：填完点「✅ 检查答案」，对绿错红并露出正确字母，
   底部给整轮得分；「🔄 再来一轮」重新抽词。每词挖几个字母在 设置→拼写考试 里调（1–6，默认 3，
   短词自动少挖、至少露 2 个字母）。
+
+■ 词库补全（看到"（词库暂无释义）"就来这里）
+  出厂只内嵌 45 个高频考研词（保证首次启动即可用），所以生词大多查不到释义。补一次全量词库即可：
+  1. 下载 ECDICT 词表（约 65MB，MIT 协议）：
+       https://raw.githubusercontent.com/skywind3000/ECDICT/master/ecdict.csv
+  2. 终端里导入：
+       /Applications/Parrot.app/Contents/MacOS/Parrot.App --import-ecdict ~/Downloads/ecdict.csv
+     看到「ECDICT 导入完成：新增 76xxxx 条」即成功，约 77 万词；数据目录会涨到 100MB 出头。
+  · 之前📌记过的词不用重记：读释义时会回落到词库现取，重启应用就补齐了；
+  · 导一次就够，重复执行只补空字段，不会重置你的复习进度与学习记录。
 
 ■ 在线升级（GitHub）
   项目仓库：https://github.com/XuMengEnEli/Parrot （写死在应用里，无需配置）。

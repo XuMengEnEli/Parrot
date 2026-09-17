@@ -101,7 +101,7 @@ src/
 └─ Parrot.App      # 组合根：DI/托盘/老板键/弹窗/自动升级/CLI 自检
 tests/Parrot.Tests # xunit，含 mac Vision 真机链路回归
 tools/DevTools     # 图标程序化生成、mac .app 组装打包（无 GUI 依赖）
-scripts/           # 发布与词表抓取：publish-win.ps1 / publish-mac.sh / make-mac-apps.ps1 / gen-icons.ps1 / fetch-ecdict.ps1
+scripts/           # 发布与词表抓取：publish-win.ps1 / publish-mac.sh / make-mac-apps.ps1 / gen-icons.ps1 / fetch-ecdict.ps1（Win）+ fetch-ecdict.sh（mac）
 ```
 
 ## 🔒 数据与隐私
@@ -112,8 +112,10 @@ scripts/           # 发布与词表抓取：publish-win.ps1 / publish-mac.sh / 
 - 讲义**不上传任何服务器**；OCR 完全在本机系统框架内完成；
 - 联网只有两件事：TTS 云合成（Edge/有道，失败即退回本地音色）与检查更新（GitHub Releases API）；
 - 词库数据源自 [ECDICT](https://github.com/skywind3000/ECDICT)（MIT）。应用内嵌 45 词 seed 保证开箱即用；
-  全量 ECDICT（约 200MB csv）自行导入：`powershell -File scripts/fetch-ecdict.ps1`——脚本下载后调用
-  `Parrot.App.dll --import-ecdict <csv>` 入库，导入不会重置已有复习进度。
+  全量 ECDICT（csv 约 65MB，导入后本地库约 115MB）自行导入：Win 用 `powershell -File scripts/fetch-ecdict.ps1`，
+  mac/linux 用 `bash scripts/fetch-ecdict.sh`（也可 `... fetch-ecdict.sh <已下载的 csv>` 跳过下载）。
+  两个脚本下载后都调用 `Parrot.App.dll --import-ecdict <csv>` 入库，只补空字段、不重置已有复习进度；
+  学习记录读释义时会回落到词库现取，所以"先记词、后导入"的老记录也会自动补齐。
 
 ## 🚀 打包发版
 

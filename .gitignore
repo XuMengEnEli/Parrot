@@ -14,6 +14,8 @@ tts-cache/
 publish/
 TestResults/
 *.log
+# 下载的 ECDICT 全量词表（约 200MB，导入后即可删）
+tools/ecdict.csv
 
 # 讲义素材（版权 PDF，不入库）
 核心词/

@@ -1,3 +1,5 @@
+using Microsoft.Data.Sqlite;
+
 namespace Parrot.Data;
 
 /// <summary>某天的学习记录汇总（列表页一行）。</summary>
@@ -80,15 +82,24 @@ public sealed class StudyLogRepository(LocalDatabase db)
         return list;
     }
 
+    /// <summary>
+    /// 取词口径：释义快照为空时回落到词库现取。全量 ECDICT 是事后才导入的（首次启动只有内嵌 seed），
+    /// 只读快照会让早先记的词永远显示"暂无释义"。
+    /// </summary>
+    private const string SelectWithMeaning = """
+        SELECT sl.word, COALESCE(NULLIF(sl.meaning, ''), w.transl, ''), sl.note, sl.added_at
+        FROM study_log sl LEFT JOIN words w ON w.word = sl.word
+        """;
+
     public List<StudyWordRow> WordsOfDay(DateOnly day)
     {
         using var conn = db.Open();
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT word, meaning, note, added_at FROM study_log WHERE day=$d ORDER BY added_at, word";
+        cmd.CommandText = $"{SelectWithMeaning} WHERE sl.day=$d ORDER BY sl.added_at, sl.word";
         cmd.Parameters.AddWithValue("$d", day.ToString("yyyy-MM-dd"));
         using var r = cmd.ExecuteReader();
         var list = new List<StudyWordRow>();
-        while (r.Read()) list.Add(new StudyWordRow(r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3)));
+        while (r.Read()) list.Add(MapRow(r));
         return list;
     }
 
@@ -97,12 +108,12 @@ public sealed class StudyLogRepository(LocalDatabase db)
     {
         using var conn = db.Open();
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT word, meaning, note, added_at FROM study_log WHERE day=$d ORDER BY RANDOM() LIMIT $n";
+        cmd.CommandText = $"{SelectWithMeaning} WHERE sl.day=$d ORDER BY RANDOM() LIMIT $n";
         cmd.Parameters.AddWithValue("$d", day.ToString("yyyy-MM-dd"));
         cmd.Parameters.AddWithValue("$n", Math.Max(1, n));
         using var r = cmd.ExecuteReader();
         var list = new List<StudyWordRow>();
-        while (r.Read()) list.Add(new StudyWordRow(r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3)));
+        while (r.Read()) list.Add(MapRow(r));
         return list;
     }
 
@@ -111,11 +122,14 @@ public sealed class StudyLogRepository(LocalDatabase db)
     {
         using var conn = db.Open();
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT word, meaning, note, added_at FROM study_log WHERE day=$d ORDER BY RANDOM() LIMIT 1";
+        cmd.CommandText = $"{SelectWithMeaning} WHERE sl.day=$d ORDER BY RANDOM() LIMIT 1";
         cmd.Parameters.AddWithValue("$d", day.ToString("yyyy-MM-dd"));
         using var r = cmd.ExecuteReader();
-        return r.Read() ? new StudyWordRow(r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3)) : null;
+        return r.Read() ? MapRow(r) : null;
     }
+
+    private static StudyWordRow MapRow(SqliteDataReader r)
+        => new(r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3));
 
     /// <summary>某词今天是否已在列表中（📌 按钮初始状态用）。</summary>
     public bool HasWord(string word, DateOnly day)

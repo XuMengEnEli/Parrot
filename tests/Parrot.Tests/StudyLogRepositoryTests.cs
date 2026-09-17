@@ -48,6 +48,27 @@ public class StudyLogRepositoryTests : IDisposable
     }
 
     [Fact]
+    public void WordsOfDay_FallsBackToWordbook_WhenSnapshotEmpty()
+    {
+        // 记词时词库里还没有它（首次启动只有 45 词 seed），事后才导入全量 ECDICT
+        _log.Add("increase", "", "ctx", Today);
+        Assert.Equal("", _log.WordsOfDay(Today).Single().Meaning);
+
+        _words.Import("increase", "ɪn'kri:s", "v. 增长；提高", "ky", Today);
+        Assert.Equal("v. 增长；提高", _log.WordsOfDay(Today).Single().Meaning);
+        Assert.Equal("v. 增长；提高", _log.RandomOneOfDay(Today)!.Meaning);
+        Assert.Equal("v. 增长；提高", _log.RandomOfDay(Today, 5).Single().Meaning);
+    }
+
+    [Fact]
+    public void WordsOfDay_KeepSnapshot_OverWordbookTranslation()
+    {
+        _words.Import("focus", "", "n. 焦点（词典）", null, Today);
+        _log.Add("focus", "n. 重点（记入时的句子义）", "", Today);
+        Assert.Equal("n. 重点（记入时的句子义）", _log.WordsOfDay(Today).Single().Meaning);
+    }
+
+    [Fact]
     public void Days_GroupsCountsDescending()
     {
         _log.Add("a", "", "", Today);
