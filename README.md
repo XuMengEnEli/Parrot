@@ -1,6 +1,6 @@
 # 🦜 鹦鹉 Parrot
 
-> 鹦鹉学舌，练嘴即练耳——考研英语的**跟读 · 复读 · 拼写**桌面学习端。
+> 一款背单词的辅助小工具
 > Avalonia 跨平台（Windows / macOS），免费开源，数据全存本地，OCR 与发音降级链路离线可用。
 
 [![.NET](https://img.shields.io/badge/.NET-10-5C2D91)](https://dotnet.microsoft.com/download/dotnet/10.0)
