@@ -30,19 +30,29 @@ public sealed class ReaderOcrOrchestrationTests : IDisposable
     private sealed class StubOcr : IOcrService
     {
         public int Calls;
+        private int _inFlight;
+
+        /// <summary>同时在识别中的页数峰值：证明取的是并发而不是逐页串行。</summary>
+        public int MaxInFlight;
+
         public bool IsAvailable => true;
         public int MaxImageDimensionPx => 2604;
 
-        public Task<IReadOnlyList<OcrTextLine>?> RecognizePngAsync(byte[] png, CancellationToken ct)
+        public async Task<IReadOnlyList<OcrTextLine>?> RecognizePngAsync(byte[] png, CancellationToken ct)
         {
             Interlocked.Increment(ref Calls);
+            int now = Interlocked.Increment(ref _inFlight);
+            for (int seen = Volatile.Read(ref MaxInFlight); now > seen; seen = Volatile.Read(ref MaxInFlight))
+                if (Interlocked.CompareExchange(ref MaxInFlight, now, seen) == seen) break;
+            await Task.Delay(400, ct); // 不延时的话任务瞬间完成，并发度恒为 1，测不出退化；也须长于冷渲染一页的耗时，否则永远错开
+            Interlocked.Decrement(ref _inFlight);
             IReadOnlyList<OcrTextLine> lines =
             [
                 new OcrTextLine("Unit Test Heading", 70, 40, 320, 26),   // 大行高 → Heading 热点
                 new OcrTextLine("English sentence here.", 70, 90, 300, 15),
                 new OcrTextLine("中文句子。", 70, 106, 120, 15),          // 并入同段，但 speak=null 无热点
             ];
-            return Task.FromResult<IReadOnlyList<OcrTextLine>?>(lines);
+            return lines;
         }
     }
 
@@ -98,6 +108,8 @@ public sealed class ReaderOcrOrchestrationTests : IDisposable
             $"OCR 未被触发：ExtractFailed={vm.ExtractFailed}, ViewMode={vm.ViewModeIndex}, Extracting={vm.IsExtracting}, " +
             $"Blocks=[{string.Join(",", vm.Blocks.Select(b => b.GetType().Name))}]");
         Assert.Equal(doc.PageCount, ocr.Calls);
+        // 首次加载并发提速：同时在识别的页数峰值必须 >1，否则退回逐页串行
+        Assert.True(ocr.MaxInFlight >= 2, $"OCR 退化成串行：同时最多只识别 {ocr.MaxInFlight} 页");
         Assert.Equal(1, vm.ViewModeIndex);       // 原图视图保持不动——版式就是位图本身
         Assert.Null(vm.OcrStatus);               // 进度条已收起
         Assert.NotNull(vm.ScanHint);             // 完成说明条在位

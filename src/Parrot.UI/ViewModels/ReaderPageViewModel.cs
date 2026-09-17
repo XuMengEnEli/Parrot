@@ -230,44 +230,78 @@ public sealed partial class ReaderPageViewModel : PageViewModelBase
         _autoSwitching = false;
     }
 
-    /// <summary>后台逐页 OCR：产出"句尾坐标+发音文本"热点，就地叠加到原图（进度在工具栏）。</summary>
+    /// <summary>后台并发 OCR：产出"句尾坐标+发音文本"热点，就地叠加到原图（进度在工具栏）。</summary>
     private async Task OcrFillAsync(PdfDocumentSource doc, List<int> scannedPages)
     {
         var cts = new CancellationTokenSource();
         _ocrCts = cts;
         int done = 0, ok = 0;
         OcrStatus = $"OCR 标注原图🔊 0/{scannedPages.Count}…";
-        foreach (var page in scannedPages)
+        try
         {
-            if (cts.IsCancellationRequested || !ReferenceEquals(SelectedDocument, doc)) break;
-            IReadOnlyList<PdfLine>? lines = null;
-            try
+            await foreach (var (page, lines) in OcrPagesAsync(doc, scannedPages, OcrDegree, cts.Token))
             {
-                lines = await doc.OcrPageLinesAsync(page - 1, _ocr!, cts.Token);
-            }
-            catch (OperationCanceledException) { break; }
-            done++;
-            // 图形页（思维导图）OCR 只有碎片字块 → 不过"确有正文"门槛就不做任何标注，保留干净原图
-            if (lines is { Count: > 0 } && OcrLayout.WorthKeeping(lines))
-            {
-                var spots = OverlayLayout.BuildSpots(lines);
-                if (spots.Count > 0)
+                done++;
+                // 图形页（思维导图）OCR 只有碎片字块 → 不过"确有正文"门槛就不做任何标注，保留干净原图
+                if (lines is { Count: > 0 } && OcrLayout.WorthKeeping(lines))
                 {
-                    ok++;
-                    GetSpotsMap(doc)[page] = spots;
-                    if (ReferenceEquals(SelectedDocument, doc)
-                        && _pagesCache.TryGetValue(doc, out var pages)
-                        && page >= 1 && page <= pages.Count)
-                        pages[page - 1].SetSpots(spots);
+                    var spots = OverlayLayout.BuildSpots(lines);
+                    if (spots.Count > 0)
+                    {
+                        ok++;
+                        GetSpotsMap(doc)[page] = spots;
+                        if (ReferenceEquals(SelectedDocument, doc)
+                            && _pagesCache.TryGetValue(doc, out var pages)
+                            && page >= 1 && page <= pages.Count)
+                            pages[page - 1].SetSpots(spots);
+                    }
                 }
+                OcrStatus = done < scannedPages.Count ? $"OCR 标注原图🔊 {done}/{scannedPages.Count}…" : null;
+                if (cts.IsCancellationRequested || !ReferenceEquals(SelectedDocument, doc)) break;
             }
-            OcrStatus = done < scannedPages.Count ? $"OCR 标注原图🔊 {done}/{scannedPages.Count}…" : null;
         }
+        catch (OperationCanceledException) { /* 切走文档/关页：进度条下面统一收起 */ }
         OcrStatus = null;
 
         if (ok > 0 && ReferenceEquals(SelectedDocument, doc)
             && !cts.IsCancellationRequested && ViewModeIndex == 1)
             ScanHint = $"OCR 完成：已在 {ok} 页的原图上标注句内 🔊，点句子右侧的喇叭即可发音";
+    }
+
+    /// <summary>
+    /// 识别并发度：Vision 每页是一个 osascript 子进程（各自加载 Vision 模型，内存按页数涨），
+    /// WinRT 每页自建 BitmapDecoder，都互不依赖。
+    /// 实测 12 页扫描件（16 核机）：4 路 3.18x、6 路 3.98x、8 路 4.32x——6 路之后收益被
+    /// PDFium 渲染全局锁与识别进程抢核吃掉，故上限取 6；小核数机器按 CPU/2 退到 2~3 路。
+    /// 完整首次加载路径复测（46 页真扫描件）：串行 45.8s → 6 路 13.7s，1022 个热点一字不差。
+    /// </summary>
+    private static int OcrDegree => Math.Clamp(Environment.ProcessorCount / 2, 2, 6);
+
+    /// <summary>
+    /// 按完成顺序产出"页 → OCR 行"：滑动窗口内最多 <paramref name="degree"/> 页在识别。
+    /// 页渲染仍在 PDFium 全局锁里串行（见 PdfDocumentSource.PdfiumGate），所以并发省下的是识别那一大段。
+    /// 产出方不碰 UI：消费端（OcrFillAsync）在自己的上下文里逐条落卡。
+    /// </summary>
+    private async IAsyncEnumerable<(int Page, IReadOnlyList<PdfLine>? Lines)> OcrPagesAsync(
+        PdfDocumentSource doc, List<int> pages, int degree,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+    {
+        var running = new List<Task<(int, IReadOnlyList<PdfLine>?)>>();
+        int next = 0;
+        while (next < pages.Count || running.Count > 0)
+        {
+            while (running.Count < degree && next < pages.Count)
+            {
+                int page = pages[next++];
+                running.Add(RunPageAsync(page));
+            }
+            var finished = await Task.WhenAny(running);
+            running.Remove(finished);
+            yield return await finished;
+        }
+
+        async Task<(int, IReadOnlyList<PdfLine>?)> RunPageAsync(int page)
+            => (page, await doc.OcrPageLinesAsync(page - 1, _ocr!, ct));
     }
 
     /// <summary>文本层页的原图热点：坐标直接来自 PdfPig 词框，精确且即开即用（不依赖 OCR）。</summary>
