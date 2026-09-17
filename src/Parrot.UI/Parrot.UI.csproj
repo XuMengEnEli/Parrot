@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Parrot.UI</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="$(AvaloniaVersion)" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="$(AvaloniaVersion)" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="$(AvaloniaVersion)" />
+    <PackageReference Include="Semi.Avalonia" Version="$(SemiVersion)" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageReference Include="ScottPlot.Avalonia" Version="5.1.59" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Parrot.Core\Parrot.Core.csproj" />
+    <ProjectReference Include="..\Parrot.Pdf\Parrot.Pdf.csproj" />
+    <ProjectReference Include="..\Parrot.Data\Parrot.Data.csproj" />
+  </ItemGroup>
+
+</Project>

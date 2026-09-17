@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 构建辅助小工具（不属于产品程序集，不进 slnx）：
+       icons  = 移植自 scripts/gen-icons.ps1（GDI+ → SkiaSharp，同一几何参数）
+       bundle = 移植自 scripts/make-mac-apps.ps1（Parrot.app 组装 + '/' 条目 zip）
+       为什么存在：图标与 mac 打包走 dotnet 通道即可，Win/mac/Linux 通用，不依赖 PowerShell/GDI+。 -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>DevTools</AssemblyName>
+    <RootNamespace>DevTools</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 3.119.4：与 PDFtoImage 传递依赖同版本，本地 NuGet 缓存已命中，免走镜像下载 -->
+    <PackageReference Include="SkiaSharp" Version="3.119.4" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Win32" Version="3.119.4" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Parrot.Pdf</RootNamespace>
+    <!-- PDFtoImage 标注不支持 Android<31/iOS<13.6 等；本项目目标平台只有 Win/mac，故豁免 CA1416。 -->
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- PdfPig 锁定 1.7.0-custom-5（nuget.org 上可还原）：其 API 仍是老 0.1.8 口径
+         （NumberOfPages/GetPage/Letters），因此分句要靠 Letters+BoundingBox 坐标重建。
+         官方 2.x 换了坐标 API，升级必须回归版式重建（跑 Program.cs 的 preview 工具模式与 PdfLayoutTests 比对）。 -->
+    <PackageReference Include="UglyToad.PdfPig" Version="1.7.0-custom-5" />
+    <PackageReference Include="PDFtoImage" Version="5.4.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Parrot.Core\Parrot.Core.csproj" />
+  </ItemGroup>
+
+</Project>

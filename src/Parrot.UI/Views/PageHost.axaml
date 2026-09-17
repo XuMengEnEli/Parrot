@@ -1,0 +1,60 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Parrot.UI.ViewModels"
+             x:Class="Parrot.UI.Views.PageHost"
+             x:DataType="vm:PageCardViewModel">
+  <StackPanel Margin="0,0,0,16" Spacing="4">
+    <!-- 位图与叠加层同在一个"位图像素"画布上，Viewbox 统一缩放到列宽 -->
+    <Viewbox MaxWidth="860" Stretch="Uniform">
+      <Grid Width="{Binding ImageWidthPx}" Height="{Binding ImageHeightPx}">
+        <!-- 位图到位前的占位 -->
+        <Border Background="#22000000"
+                IsVisible="{Binding Image, Converter={x:Static ObjectConverters.IsNull}}">
+          <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="8">
+            <TextBlock Text="{Binding DisplayNumber, StringFormat='第 {0} 页'}" HorizontalAlignment="Center" Opacity="0.7"/>
+            <ProgressBar IsIndeterminate="True" Width="120"
+                         IsVisible="{Binding IsLoading}"/>
+          </StackPanel>
+        </Border>
+        <Image Source="{Binding Image}"
+               IsVisible="{Binding Image, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+        <!-- 句尾 🔊 热点（文本层坐标或 OCR 坐标，随 RenderDpi 换算；原排版由位图原样保留） -->
+        <ItemsControl ItemsSource="{Binding Overlays}" x:CompileBindings="False">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <Canvas/>
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemContainerTheme>
+            <ControlTheme TargetType="ContentPresenter" x:DataType="vm:OverlayItemViewModel">
+              <Setter Property="Canvas.Left" Value="{Binding X}"/>
+              <Setter Property="Canvas.Top" Value="{Binding Y}"/>
+            </ControlTheme>
+          </ItemsControl.ItemContainerTheme>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:OverlayItemViewModel">
+              <!-- 🔊 发音 + 📌 记入当日学习（热点并排，锚在句尾右侧） -->
+              <StackPanel Orientation="Horizontal" Spacing="3">
+                <Button Width="28" Height="28" Padding="0" CornerRadius="14"
+                        Background="#D8FFFFFF" BorderBrush="#66000000" BorderThickness="1"
+                        Content="🔊" FontSize="13" Foreground="#CC000000"
+                        Command="{Binding Audio.SpeakCommand}"
+                        IsEnabled="{Binding !Audio.IsSpeaking}"
+                        ToolTip.Tip="{Binding Audio.Text}"/>
+                <Button Width="28" Height="28" Padding="0" CornerRadius="14"
+                        Background="#D8FFFFFF" BorderBrush="#66000000" BorderThickness="1"
+                        Content="{Binding Audio.RecordGlyph}" FontSize="12" Foreground="#CC000000"
+                        IsVisible="{Binding Audio.IsRecordable}"
+                        Command="{Binding Audio.RecordCommand}"
+                        ToolTip.Tip="{Binding Audio.RecordTip}"/>
+              </StackPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Grid>
+    </Viewbox>
+    <TextBlock HorizontalAlignment="Center" Opacity="0.55" FontSize="12">
+      <Run Text="第 "/><Run Text="{Binding DisplayNumber}"/><Run Text=" 页"/>
+    </TextBlock>
+  </StackPanel>
+</UserControl>

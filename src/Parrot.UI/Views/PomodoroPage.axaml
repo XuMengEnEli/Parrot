@@ -1,0 +1,54 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Parrot.UI.ViewModels"
+             xmlns:sp="clr-namespace:ScottPlot.Avalonia;assembly=ScottPlot.Avalonia"
+             x:Class="Parrot.UI.Views.PomodoroPage"
+             x:DataType="vm:PomodoroPageViewModel">
+  <TabControl x:Name="Tabs" Margin="16" SelectionChanged="OnTabChanged">
+    <TabItem Header="计时">
+      <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="16" MaxWidth="460">
+        <TextBlock Text="{Binding PhaseText}" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+        <TextBlock Text="{Binding RemainingText}" FontSize="64" FontFamily="Consolas,Menlo,monospace"
+                   HorizontalAlignment="Center"/>
+        <ProgressBar Value="{Binding Progress}" Minimum="0" Maximum="1" Height="10" CornerRadius="5"/>
+
+        <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Center">
+          <Button Content="{Binding StartButtonText}"
+                  Classes="primary" Command="{Binding ToggleStartCommand}" MinWidth="110"
+                  HorizontalContentAlignment="Center"/>
+          <Button Content="重置" Command="{Binding ResetCommand}" MinWidth="80"/>
+        </StackPanel>
+
+        <TextBlock Text="{Binding DoneHint}" HorizontalAlignment="Center" FontSize="14"
+                   Foreground="#2E7D32" MinHeight="20" TextWrapping="Wrap" TextAlignment="Center"/>
+
+        <Border Classes="card" Padding="16,9" HorizontalAlignment="Center">
+          <StackPanel Orientation="Horizontal" Spacing="20" Opacity="0.85">
+            <TextBlock VerticalAlignment="Center">
+              <Run Text="今日 "/><Run Text="{Binding TodaySessions}" FontWeight="Bold"/><Run Text=" 个番茄"/>
+            </TextBlock>
+            <Separator Width="1" Height="16" Opacity="0.25"/>
+            <TextBlock VerticalAlignment="Center">
+              <Run Text="专注 "/><Run Text="{Binding TodayMinutes}" FontWeight="Bold"/><Run Text=" 分钟"/>
+            </TextBlock>
+            <Separator Width="1" Height="16" Opacity="0.25"/>
+            <TextBlock Text="{Binding CompletedFocusTotal, StringFormat='本次会话 {0} 个'}" VerticalAlignment="Center"/>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </TabItem>
+
+    <TabItem Header="统计">
+      <DockPanel>
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,8">
+          <TextBlock Grid.Column="0" Text="近 14 天专注（分钟数含未完成片段；番茄数只计完整专注）"
+                     VerticalAlignment="Center" Opacity="0.65" FontSize="12"/>
+          <Button Grid.Column="1" Content="刷新" Command="{Binding RefreshStatsCommand}" MinWidth="72"/>
+        </Grid>
+        <Border Classes="card" Padding="8">
+          <sp:AvaPlot x:Name="StatsPlot" Height="420"/>
+        </Border>
+      </DockPanel>
+    </TabItem>
+  </TabControl>
+</UserControl>

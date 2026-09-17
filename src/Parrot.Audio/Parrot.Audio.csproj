@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Parrot.Audio</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 句子→Edge TTS（内置 Sec-MS-GEC 时钟纠偏+403 重试）；单词→有道 dictvoice -->
+    <PackageReference Include="EdgeTTS.DotNet" Version="0.4.0" />
+    <!-- 播放：Win 用 NAudio；mac 走 afplay（进程外播放，不自研跨平台播放器） -->
+    <PackageReference Include="NAudio" Version="3.1.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Parrot.Core\Parrot.Core.csproj" />
+  </ItemGroup>
+
+</Project>

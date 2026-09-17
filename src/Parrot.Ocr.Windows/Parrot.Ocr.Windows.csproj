@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <RootNamespace>Parrot.Ocr.Windows</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Parrot.Core\Parrot.Core.csproj" />
+  </ItemGroup>
+
+</Project>

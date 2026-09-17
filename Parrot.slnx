@@ -1,0 +1,18 @@
+<Solution>
+  <Folder Name="/docs/">
+    <File Path="README.md" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Parrot.App/Parrot.App.csproj" />
+    <Project Path="src/Parrot.Audio/Parrot.Audio.csproj" />
+    <Project Path="src/Parrot.Core/Parrot.Core.csproj" />
+    <Project Path="src/Parrot.Data/Parrot.Data.csproj" />
+    <Project Path="src/Parrot.Ocr.Mac/Parrot.Ocr.Mac.csproj" />
+    <Project Path="src/Parrot.Ocr.Windows/Parrot.Ocr.Windows.csproj" />
+    <Project Path="src/Parrot.Pdf/Parrot.Pdf.csproj" />
+    <Project Path="src/Parrot.UI/Parrot.UI.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Parrot.Tests/Parrot.Tests.csproj" />
+  </Folder>
+</Solution>

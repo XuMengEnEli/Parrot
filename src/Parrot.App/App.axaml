@@ -1,0 +1,167 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Parrot.App.App"
+             xmlns:semi="https://irihi.tech/semi"
+             xmlns:vm="clr-namespace:Parrot.UI.ViewModels;assembly=Parrot.UI"
+             xmlns:views="clr-namespace:Parrot.UI.Views;assembly=Parrot.UI"
+             RequestedThemeVariant="Default">
+  <Application.Styles>
+    <semi:SemiTheme Locale="zh-CN" />
+    <!-- 通用卡片：中性半透明，深浅两个主题都得体 -->
+    <Style Selector="Border.card">
+      <Setter Property="Background" Value="#11808080"/>
+      <Setter Property="BorderBrush" Value="#1A808080"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="10"/>
+    </Style>
+  </Application.Styles>
+
+  <Application.DataTemplates>
+    <DataTemplate DataType="{x:Type vm:ReaderPageViewModel}">
+      <views:ReaderPage/>
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type vm:PomodoroPageViewModel}">
+      <views:PomodoroPage/>
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type vm:StudyLogPageViewModel}">
+      <views:StudyLogPage/>
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type vm:ExamPageViewModel}">
+      <views:ExamPage/>
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type vm:SettingsPageViewModel}">
+      <views:SettingsPage/>
+    </DataTemplate>
+
+    <!-- ===== 阅读页·文本视图的版式块模板（需求 1.1 原版式重排 + 1.2 句内发音） ===== -->
+
+    <DataTemplate DataType="{x:Type vm:PageBreakViewModel}" x:DataType="vm:PageBreakViewModel">
+      <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,18,0,6"
+                  HorizontalAlignment="Center" Opacity="0.5">
+        <Border Width="36" Height="1" Background="Gray" VerticalAlignment="Center"/>
+        <TextBlock Text="{Binding Page, StringFormat='— 第 {0} 页 —'}" FontSize="11"/>
+        <Border Width="36" Height="1" Background="Gray" VerticalAlignment="Center"/>
+      </StackPanel>
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type vm:ScannedPageViewModel}" x:DataType="vm:ScannedPageViewModel">
+      <Border Margin="0,6" Padding="14,10" CornerRadius="8"
+              Background="#1FFF8F00" BorderBrush="#66FF8F00" BorderThickness="1">
+        <StackPanel Spacing="6">
+          <TextBlock Text="📄 此页为扫描件（无文本层）；系统 OCR 正后台识别，识别结果将以句尾 🔊 标注在“原图视图”的页面上（保留原版式），点喇叭即可逐句发音"
+                     TextWrapping="Wrap"/>
+          <Button Content="查看该页原图" HorizontalAlignment="Left" Padding="10,4"
+                  Command="{Binding $parent[ItemsControl].((vm:ReaderPageViewModel)DataContext).OpenPageImageCommand}"
+                  CommandParameter="{Binding Page}"/>
+        </StackPanel>
+      </Border>
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type vm:HeadingViewModel}" x:DataType="vm:HeadingViewModel">
+      <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,12,0,4">
+        <TextBlock Text="{Binding Text}" FontWeight="Bold" TextWrapping="Wrap"/>
+        <Button Content="🔊" Padding="8,2" VerticalAlignment="Top"
+                ToolTip.Tip="{Binding Audio.Error}"
+                IsVisible="{Binding Audio, Converter={x:Static ObjectConverters.IsNotNull}}"
+                IsEnabled="{Binding Audio.IsSpeaking, Converter={x:Static BoolConverters.Not}}"
+                Command="{Binding Audio.SpeakCommand}"/>
+        <Button Content="{Binding Audio.RecordGlyph}" Padding="6,2" VerticalAlignment="Top"
+                ToolTip.Tip="{Binding Audio.RecordTip}"
+                IsVisible="{Binding Audio.IsRecordable}"
+                Command="{Binding Audio.RecordCommand}"/>
+      </StackPanel>
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type vm:EntryViewModel}" x:DataType="vm:EntryViewModel">
+      <Grid ColumnDefinitions="*,Auto" Margin="0,1.5">
+        <TextBlock Grid.Column="0" Text="{Binding Text}" TextWrapping="Wrap"/>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Top" Margin="6,0,0,0">
+          <Button Content="🔊" Padding="8,2"
+                  ToolTip.Tip="{Binding Audio.Error}"
+                  IsVisible="{Binding Audio, Converter={x:Static ObjectConverters.IsNotNull}}"
+                  IsEnabled="{Binding Audio.IsSpeaking, Converter={x:Static BoolConverters.Not}}"
+                  Command="{Binding Audio.SpeakCommand}"/>
+          <Button Content="{Binding Audio.RecordGlyph}" Padding="6,2"
+                  ToolTip.Tip="{Binding Audio.RecordTip}"
+                  IsVisible="{Binding Audio.IsRecordable}"
+                  Command="{Binding Audio.RecordCommand}"/>
+        </StackPanel>
+      </Grid>
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type vm:ParagraphViewModel}" x:DataType="vm:ParagraphViewModel">
+      <ItemsControl ItemsSource="{Binding Sentences}" Margin="0,2">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <WrapPanel Orientation="Horizontal"/>
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:SentenceItemViewModel">
+            <StackPanel Orientation="Horizontal" Spacing="3" Margin="0,1,6,1">
+              <TextBlock Text="{Binding Text}" TextWrapping="Wrap"/>
+              <Button Content="🔊" Padding="6,1" VerticalAlignment="Bottom"
+                      IsVisible="{Binding HasAudio}"
+                      ToolTip.Tip="{Binding Error}"
+                      IsEnabled="{Binding IsSpeaking, Converter={x:Static BoolConverters.Not}}"
+                      Command="{Binding SpeakCommand}"/>
+              <Button Content="{Binding RecordGlyph}" Padding="6,1" VerticalAlignment="Bottom"
+                      IsVisible="{Binding IsRecordable}"
+                      ToolTip.Tip="{Binding RecordTip}"
+                      Command="{Binding RecordCommand}"/>
+              <TextBlock Text="⚠" FontSize="10" Foreground="#C62828" VerticalAlignment="Bottom"
+                         IsVisible="{Binding Error, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+            </StackPanel>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type vm:ListBlockViewModel}" x:DataType="vm:ListBlockViewModel">
+      <Grid ColumnDefinitions="Auto,*" Margin="8,2,0,2">
+        <TextBlock Grid.Column="0" Text="•" Margin="0,0,8,0"/>
+        <ItemsControl Grid.Column="1" ItemsSource="{Binding Sentences}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <WrapPanel Orientation="Horizontal"/>
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:SentenceItemViewModel">
+              <StackPanel Orientation="Horizontal" Spacing="3" Margin="0,1,6,1">
+                <TextBlock Text="{Binding Text}" TextWrapping="Wrap"/>
+                <Button Content="🔊" Padding="6,1" VerticalAlignment="Bottom"
+                        IsVisible="{Binding HasAudio}"
+                        ToolTip.Tip="{Binding Error}"
+                        IsEnabled="{Binding IsSpeaking, Converter={x:Static BoolConverters.Not}}"
+                        Command="{Binding SpeakCommand}"/>
+                <Button Content="{Binding RecordGlyph}" Padding="6,1" VerticalAlignment="Bottom"
+                        IsVisible="{Binding IsRecordable}"
+                        ToolTip.Tip="{Binding RecordTip}"
+                        Command="{Binding RecordCommand}"/>
+                <TextBlock Text="⚠" FontSize="10" Foreground="#C62828" VerticalAlignment="Bottom"
+                           IsVisible="{Binding Error, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+              </StackPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Grid>
+    </DataTemplate>
+  </Application.DataTemplates>
+
+  <!-- 托盘（需求 2.2）：关窗/老板键收起后由此唤回 -->
+  <TrayIcon.Icons>
+    <TrayIcons>
+      <TrayIcon Icon="/Assets/tray.png" ToolTipText="鹦鹉 Parrot — 考研英语桌面端">
+        <TrayIcon.Menu>
+          <NativeMenu>
+            <NativeMenuItem Header="显示主窗口"/>
+            <NativeMenuItem Header="弹一张复习卡"/>
+            <NativeMenuItemSeparator/>
+            <NativeMenuItem Header="退出"/>
+          </NativeMenu>
+        </TrayIcon.Menu>
+      </TrayIcon>
+    </TrayIcons>
+  </TrayIcon.Icons>
+</Application>

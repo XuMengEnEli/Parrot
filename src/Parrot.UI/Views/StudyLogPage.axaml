@@ -1,0 +1,127 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Parrot.UI.ViewModels"
+             x:Class="Parrot.UI.Views.StudyLogPage"
+             x:DataType="vm:StudyLogPageViewModel">
+  <UserControl.Styles>
+    <Style Selector="ListBox.days ListBoxItem">
+      <Setter Property="Padding" Value="10,7"/>
+      <Setter Property="Margin" Value="0,1"/>
+      <Setter Property="CornerRadius" Value="8"/>
+    </Style>
+    <Style Selector="Button.confirm">
+      <Setter Property="Foreground" Value="#E5484D"/>
+      <Setter Property="BorderBrush" Value="#80E5484D"/>
+    </Style>
+  </UserControl.Styles>
+
+  <Grid RowDefinitions="Auto,*" Margin="28,22,28,24">
+
+    <!-- 标题行：说明 + 今日计数 -->
+    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,14">
+      <StackPanel Grid.Column="0" Spacing="2">
+        <TextBlock Text="学习记录" FontSize="20" FontWeight="SemiBold"/>
+        <TextBlock Text="阅读时点句子旁的 📌，单词即记入当天列表——复习弹窗与拼写考试都从这里取词。"
+                   FontSize="12" Opacity="0.6"/>
+      </StackPanel>
+      <Border Grid.Column="1" Classes="card" Padding="14,8" VerticalAlignment="Center">
+        <StackPanel Spacing="0">
+          <TextBlock Text="{Binding TodayCount}" FontSize="22" FontWeight="Bold" HorizontalAlignment="Center"
+                     FontFamily="Consolas,Menlo,monospace"/>
+          <TextBlock Text="今日已记" FontSize="11" Opacity="0.6" HorizontalAlignment="Center"/>
+        </StackPanel>
+      </Border>
+    </Grid>
+
+    <Grid Grid.Row="1" ColumnDefinitions="340,*">
+
+      <!-- 左：按日期分组（日期 / 生词数量 / 查看 / 移除） -->
+      <Border Grid.Column="0" Classes="card" Padding="10" Margin="0,0,14,0">
+        <Grid RowDefinitions="Auto,*">
+          <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="6,2,6,8">
+            <TextBlock Grid.Column="0" Text="日期" FontSize="12" Opacity="0.65" VerticalAlignment="Center"/>
+            <Button Grid.Column="1" Content="↻ 刷新" Padding="8,2" FontSize="11" Classes="flat"
+                    Command="{Binding ReloadCommand}"
+                    ToolTip.Tip="重新读取记录列表（在别处记的词点这里刷新）"/>
+          </Grid>
+          <Panel Grid.Row="1">
+            <ListBox Classes="days" x:Name="DayList"
+                     ItemsSource="{Binding Days}"
+                     SelectedItem="{Binding SelectedDay, Mode=TwoWay}"
+                     Background="Transparent"
+                     IsVisible="{Binding HasNoDays, Converter={x:Static BoolConverters.Not}}">
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:StudyDayItem">
+                  <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,2">
+                    <StackPanel Grid.Column="0" Spacing="1" VerticalAlignment="Center">
+                      <TextBlock Text="{Binding Label}" FontWeight="SemiBold" FontSize="13"/>
+                      <TextBlock Text="{Binding CountText}" FontSize="11" Opacity="0.6"/>
+                    </StackPanel>
+                    <Button Grid.Column="1" Content="查看" Padding="9,3" FontSize="12" Margin="6,0,0,0"
+                            Command="{Binding $parent[UserControl].((vm:StudyLogPageViewModel)DataContext).ViewDayCommand}"
+                            CommandParameter="{Binding}"
+                            ToolTip.Tip="查看当天所有单词与释义"/>
+                    <Button Grid.Column="2" Padding="9,3" FontSize="12" Margin="6,0,0,0"
+                            Content="{Binding RemoveLabel}"
+                            Classes.confirm="{Binding Confirming}"
+                            Command="{Binding $parent[UserControl].((vm:StudyLogPageViewModel)DataContext).RemoveDayCommand}"
+                            CommandParameter="{Binding}"/>
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+            <StackPanel Spacing="8" Margin="0,40,0,0" HorizontalAlignment="Center" VerticalAlignment="Center"
+                        IsVisible="{Binding HasNoDays}">
+              <TextBlock Text="🗓️" FontSize="30" HorizontalAlignment="Center" Opacity="0.5"/>
+              <TextBlock Text="还没有学习记录&#10;去讲义里点几个 📌 吧" FontSize="12" Opacity="0.6"
+                         TextAlignment="Center"/>
+            </StackPanel>
+          </Panel>
+        </Grid>
+      </Border>
+
+      <!-- 右：所选日期的明细（单词 + 释义 + 出处句） -->
+      <Border Grid.Column="1" Classes="card" Padding="16,12">
+        <Grid RowDefinitions="Auto,Auto,*">
+          <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="0,0,0,2">
+            <TextBlock Text="{Binding SelectedDay.Label, FallbackValue='当日明细'}" FontSize="15" FontWeight="SemiBold"/>
+            <TextBlock Text="{Binding SelectedDay.CountText}" FontSize="12" Opacity="0.6" VerticalAlignment="Center"/>
+          </StackPanel>
+          <TextBlock Grid.Row="1" Text="{Binding TtsError}" FontSize="11" Foreground="#C62828" Margin="0,2,0,0"
+                     TextWrapping="Wrap"
+                     IsVisible="{Binding TtsError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+
+          <ListBox Grid.Row="2" ItemsSource="{Binding Words}" Background="Transparent" Margin="0,8,0,0"
+                   IsVisible="{Binding HasSelection}">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:StudyWordItem">
+                <Grid ColumnDefinitions="170,*,Auto,Auto" Margin="0,4">
+                  <TextBlock Grid.Column="0" Text="{Binding Word}" FontFamily="Consolas,Menlo,monospace"
+                             FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center"
+                             TextTrimming="CharacterEllipsis"/>
+                  <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center" Margin="8,0">
+                    <TextBlock Text="{Binding Meaning}" FontSize="13" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding Note}" FontSize="11" Opacity="0.55" TextTrimming="CharacterEllipsis"
+                               ToolTip.Tip="{Binding Note}" IsVisible="{Binding HasNote}"/>
+                  </StackPanel>
+                  <Button Grid.Column="2" Content="🔊" Padding="8,2" VerticalAlignment="Center"
+                          Command="{Binding $parent[UserControl].((vm:StudyLogPageViewModel)DataContext).SpeakCommand}"
+                          CommandParameter="{Binding Word}"
+                          ToolTip.Tip="重听这个词"/>
+                  <Button Grid.Column="3" Content="✕" Padding="8,2" Classes="flat" VerticalAlignment="Center"
+                          Command="{Binding $parent[UserControl].((vm:StudyLogPageViewModel)DataContext).RemoveWordCommand}"
+                          CommandParameter="{Binding}"
+                          ToolTip.Tip="从当天学习中移除"/>
+                </Grid>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+
+          <TextBlock Grid.Row="2" Text="点左侧日期或“查看”即可看到当天记录的单词与释义"
+                     FontSize="12" Opacity="0.55" HorizontalAlignment="Center" VerticalAlignment="Center"
+                     IsVisible="{Binding HasSelection, Converter={x:Static BoolConverters.Not}}"/>
+        </Grid>
+      </Border>
+    </Grid>
+  </Grid>
+</UserControl>

@@ -1,0 +1,114 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Parrot.UI.ViewModels"
+             x:Class="Parrot.UI.Views.ExamPage"
+             x:DataType="vm:ExamPageViewModel">
+  <ScrollViewer>
+    <StackPanel Margin="28,22,28,32" Spacing="14" HorizontalAlignment="Stretch">
+
+      <!-- 标题 + 操作 -->
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel Grid.Column="0" Spacing="2">
+          <TextBlock Text="拼写考试" FontSize="20" FontWeight="SemiBold"/>
+          <TextBlock Text="{Binding SubTitle}" FontSize="12" Opacity="0.6"/>
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <Button Content="🔄 再来一轮" Command="{Binding NewRoundCommand}"
+                  ToolTip.Tip="重新抽词出题（挖空数在 设置→拼写考试 里调）"/>
+          <Button Content="✅ 检查答案" Classes="primary" Command="{Binding CheckAllCommand}"
+                  IsEnabled="{Binding HasQuestions}"
+                  ToolTip.Tip="核对所有填空，绿=对、红=错并露出正确字母"/>
+        </StackPanel>
+      </Grid>
+
+      <!-- 得分横幅 -->
+      <Border Classes="card" Padding="18,10" Background="#1430A46C"
+              IsVisible="{Binding Checked}">
+        <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+          <TextBlock Text="🏁" FontSize="18"/>
+          <TextBlock Text="{Binding ScoreText}" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center"/>
+        </StackPanel>
+      </Border>
+
+      <!-- 空池提示 -->
+      <Border Classes="card" Padding="40,32" IsVisible="{Binding IsPoolEmpty}">
+        <StackPanel Spacing="10" HorizontalAlignment="Center">
+          <TextBlock Text="✍️" FontSize="40" HorizontalAlignment="Center" Opacity="0.6"/>
+          <TextBlock Text="{Binding EmptyHint}" FontSize="14" Opacity="0.75" TextWrapping="Wrap"
+                     TextAlignment="Center" MaxWidth="420" HorizontalAlignment="Center"/>
+        </StackPanel>
+      </Border>
+
+      <!-- 题卡列表 -->
+      <ItemsControl ItemsSource="{Binding Questions}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <StackPanel Spacing="10"/>
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:ExamQuestionViewModel">
+            <Border Classes="card" Padding="0">
+              <Grid ColumnDefinitions="5,*">
+                <Border Grid.Column="0" Background="{Binding VerdictBrush}"
+                        CornerRadius="10,0,0,10"/>
+                <Grid Grid.Column="1" ColumnDefinitions="*,Auto" Margin="18,14">
+                  <StackPanel Grid.Column="0" Spacing="6">
+                    <ItemsControl ItemsSource="{Binding Segments}">
+                      <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+                      </ItemsControl.ItemsPanel>
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ExamSegmentViewModel">
+                          <Panel>
+                            <!-- 可见字母 -->
+                            <TextBlock Text="{Binding Ch}" FontFamily="Consolas,Menlo,monospace" FontSize="24"
+                                       FontWeight="SemiBold" VerticalAlignment="Center" Margin="1.5,0"
+                                       IsVisible="{Binding IsLetter}"/>
+                            <!-- 填空格：单字符输入 + 三态（待填灰/对绿/错红），错后露答案 -->
+                            <StackPanel Spacing="2" VerticalAlignment="Center" Margin="2,0"
+                                        IsVisible="{Binding IsBlank}">
+                              <TextBox Text="{Binding Blank.Input, Mode=TwoWay}" MaxLength="1"
+                                       Width="32" Height="40" Padding="0"
+                                       FontFamily="Consolas,Menlo,monospace" FontSize="20" FontWeight="SemiBold"
+                                       TextAlignment="Center" CaretBrush="{Binding Blank.StateBrush}"
+                                       BorderBrush="{Binding Blank.StateBrush}" BorderThickness="0,0,0,2.5"
+                                       Background="{Binding Blank.StateBg}" CornerRadius="6"/>
+                              <TextBlock Text="{Binding Answer}" FontSize="11" Foreground="#30A46C"
+                                         HorizontalAlignment="Center" FontFamily="Consolas,Menlo,monospace"
+                                         IsVisible="{Binding Blank.ShowAnswerHint}"/>
+                            </StackPanel>
+                          </Panel>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                      <TextBlock Text="{Binding Meaning}" FontSize="13" Opacity="0.75" TextWrapping="Wrap"
+                                 MaxWidth="620" VerticalAlignment="Center"/>
+                      <Border Background="#0F808080" CornerRadius="9" Padding="9,2" VerticalAlignment="Center"
+                              IsVisible="{Binding StateText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                        <TextBlock Text="{Binding StateText}" FontSize="11" FontWeight="SemiBold"
+                                   Foreground="{Binding VerdictBrush}"/>
+                      </Border>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="6"
+                                IsVisible="{Binding ShowReveal}">
+                      <TextBlock Text="正确拼写" FontSize="11" Opacity="0.55"/>
+                      <TextBlock Text="{Binding Word}" FontSize="12" FontWeight="SemiBold"
+                                 FontFamily="Consolas,Menlo,monospace" Foreground="#30A46C"/>
+                    </StackPanel>
+                  </StackPanel>
+                  <Button Grid.Column="1" Content="🔊" Padding="10,4" VerticalAlignment="Center" Margin="10,0,0,0"
+                          Command="{Binding $parent[UserControl].((vm:ExamPageViewModel)DataContext).SpeakCommand}"
+                          CommandParameter="{Binding Word}"
+                          ToolTip.Tip="听一遍这个单词"/>
+                </Grid>
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

@@ -1,0 +1,50 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:Parrot.UI.ViewModels;assembly=Parrot.UI"
+        x:Class="Parrot.App.PopupCardWindow"
+        x:DataType="vm:PopupCardViewModel"
+        Title="PopupCard"
+        Width="330" Height="196"
+        CanResize="False"
+        WindowDecorations="None"
+        Topmost="True"
+        ShowActivated="False"
+        Focusable="False"
+        TransparencyLevelHint="Transparent"
+        Background="Transparent"
+        IsVisible="False">
+  <!-- 伪装成右下角横幅广告：白卡 + "广告"角标 + 小号 ×（需求 2.3） -->
+  <Border Margin="8" CornerRadius="10" Background="#FF263238" BorderBrush="#33FFFFFF" BorderThickness="1"
+          PointerPressed="OnDragAreaPressed">
+    <Grid RowDefinitions="Auto,*,Auto" Margin="14,10">
+      <!-- 顶栏：假广告标 + 关闭 -->
+      <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
+        <Border Background="#66FFC107" CornerRadius="3" Padding="4,1">
+          <TextBlock Text="广告" FontSize="9" Foreground="#FFEB3B" VerticalAlignment="Center"/>
+        </Border>
+        <Button x:Name="CloseBtn" Content="×" FontSize="12" Padding="6,0" Background="Transparent"
+                Foreground="#99FFFFFF" Click="OnCloseClick"/>
+      </StackPanel>
+
+      <!-- 卡片主体 -->
+      <StackPanel Grid.Row="1" Spacing="6">
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <Border Background="#1E88E5" CornerRadius="4" Padding="6,1" IsVisible="{Binding !IsWrongAnswer}">
+            <TextBlock Text="生词" FontSize="10" Foreground="White"/>
+          </Border>
+          <Border Background="#E53935" CornerRadius="4" Padding="6,1" IsVisible="{Binding IsWrongAnswer}">
+            <TextBlock Text="错题" FontSize="10" Foreground="White"/>
+          </Border>
+          <TextBlock Text="{Binding Word}" FontSize="21" FontWeight="Bold" Foreground="White" VerticalAlignment="Center"/>
+          <Button Command="{Binding SpeakCommand}" IsEnabled="{Binding !Speaking}" Content="🔊"
+                  Padding="7,2" FontSize="13" VerticalAlignment="Center" Background="#22FFFFFF"/>
+        </StackPanel>
+        <TextBlock Text="{Binding Meaning}" FontSize="12.5" Foreground="#DDE" TextWrapping="Wrap" MaxHeight="56"/>
+        <TextBlock Text="{Binding TtsError}" FontSize="10" Foreground="#F88" TextWrapping="Wrap"
+                   IsVisible="{Binding TtsError, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+      </StackPanel>
+
+      <TextBlock Grid.Row="2" Text="点击卡片可拖动 · 学习插件" FontSize="9" Foreground="#778" HorizontalAlignment="Right"/>
+    </Grid>
+  </Border>
+</Window>

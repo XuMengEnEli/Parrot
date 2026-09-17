@@ -1,0 +1,55 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>Parrot.App</RootNamespace>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <Product>鹦鹉 Parrot</Product>
+    <AssemblyTitle>鹦鹉 Parrot — 考研英语桌面端</AssemblyTitle>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+  </PropertyGroup>
+
+  <!-- Windows 构建启用 WinRT OCR（TFM 需 windows 版本才能引用 WinRT 投影）；mac 构建回纯 net10.0。
+       按"宿主 × 目标 RID"双判定：在 Windows 上交叉发布 -r osx-* 时也必须走纯 net10.0，
+       否则 windows TFM 找不到 osx 运行时包，且 WinRT 代码会混进 mac 产物 -->
+  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows')) and ('$(RuntimeIdentifier)' == '' or $(RuntimeIdentifier.StartsWith('win')))">
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <DefineConstants>$(DefineConstants);WINDOWS_OCR</DefineConstants>
+  </PropertyGroup>
+
+  <!-- mac 构建启用 Vision OCR（osascript/JXA 桥，纯托管无原生依赖）；宿主是 mac 或目标是 osx-* RID 时生效 -->
+  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('OSX')) or ('$(RuntimeIdentifier)' != '' and $(RuntimeIdentifier.StartsWith('osx')))">
+    <DefineConstants>$(DefineConstants);MAC_OCR</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="Assets/**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="$(AvaloniaVersion)" />
+    <PackageReference Include="Avalonia.Desktop" Version="$(AvaloniaVersion)" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="$(AvaloniaVersion)" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="$(AvaloniaVersion)" />
+    <PackageReference Include="Semi.Avalonia" Version="$(SemiVersion)" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.5" />
+    <!-- 全局热键（mac 需辅助功能权限，v1 先应用内 KeyBindings） -->
+    <PackageReference Include="SharpHook" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Parrot.Core\Parrot.Core.csproj" />
+    <ProjectReference Include="..\Parrot.Data\Parrot.Data.csproj" />
+    <ProjectReference Include="..\Parrot.Pdf\Parrot.Pdf.csproj" />
+    <ProjectReference Include="..\Parrot.Audio\Parrot.Audio.csproj" />
+    <ProjectReference Include="..\Parrot.UI\Parrot.UI.csproj" />
+    <ProjectReference Include="..\Parrot.Ocr.Windows\Parrot.Ocr.Windows.csproj"
+                      Condition="$([MSBuild]::IsOSPlatform('Windows')) and ('$(RuntimeIdentifier)' == '' or $(RuntimeIdentifier.StartsWith('win')))" />
+    <ProjectReference Include="..\Parrot.Ocr.Mac\Parrot.Ocr.Mac.csproj"
+                      Condition="$([MSBuild]::IsOSPlatform('OSX')) or ('$(RuntimeIdentifier)' != '' and $(RuntimeIdentifier.StartsWith('osx')))" />
+  </ItemGroup>
+
+</Project>

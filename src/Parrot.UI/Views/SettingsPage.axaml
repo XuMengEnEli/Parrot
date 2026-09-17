@@ -1,0 +1,231 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Parrot.UI.ViewModels"
+             x:Class="Parrot.UI.Views.SettingsPage"
+             x:DataType="vm:SettingsPageViewModel">
+  <UserControl.Styles>
+    <!-- "?" 帮助角标：说明文字收进悬停提示，不再占行 -->
+    <Style Selector="Border.help">
+      <Setter Property="Width" Value="17"/>
+      <Setter Property="Height" Value="17"/>
+      <Setter Property="CornerRadius" Value="9"/>
+      <Setter Property="Background" Value="#26808080"/>
+      <Setter Property="BorderBrush" Value="#40808080"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+    <Style Selector="Border.help:pointerover">
+      <Setter Property="Background" Value="#40808080"/>
+      <Setter Property="BorderBrush" Value="#66808080"/>
+    </Style>
+    <Style Selector="Border.help TextBlock">
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="FontWeight" Value="Bold"/>
+      <Setter Property="HorizontalAlignment" Value="Center"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+      <Setter Property="Opacity" Value="0.75"/>
+    </Style>
+    <Style Selector="TextBlock.rowTitle">
+      <Setter Property="FontSize" Value="13.5"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+    <Style Selector="Border.sep">
+      <Setter Property="Height" Value="1"/>
+      <Setter Property="Background" Value="#14808080"/>
+      <Setter Property="Margin" Value="0,9"/>
+    </Style>
+  </UserControl.Styles>
+
+  <ScrollViewer>
+    <!-- 宽度自适应：铺满内容区（不再 MaxWidth 靠左），窄窗口下卡片内部仍各占 * 列不堆叠 -->
+    <StackPanel Margin="28,22,28,32" Spacing="14" HorizontalAlignment="Stretch">
+
+      <StackPanel Spacing="2">
+        <TextBlock Text="设置" FontSize="20" FontWeight="SemiBold"/>
+        <TextBlock Text="所有改动即时保存并生效，无需重启。带 ? 的项目悬停看说明。" FontSize="12" Opacity="0.6"/>
+      </StackPanel>
+
+      <!-- 快捷键与托盘 -->
+      <Border Classes="card" Padding="18,12">
+        <StackPanel Spacing="0">
+          <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,2,0,8">
+            <TextBlock Text="⌨️" FontSize="14"/>
+            <TextBlock Text="快捷键与托盘" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"/>
+          </StackPanel>
+
+          <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto" >
+            <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+              <TextBlock Classes="rowTitle" Text="老板键 Ctrl+Shift+H"/>
+              <Border Classes="help" ToolTip.Tip="一键隐藏 / 唤回整个窗口。选「全局」时 Windows 任意焦点下可用；mac 需在 系统设置→隐私与安全性→辅助功能 中授权，未授权会自动退回仅应用内。">
+                <TextBlock Text="?"/>
+              </Border>
+            </StackPanel>
+            <ToggleSwitch Grid.Row="0" Grid.Column="1" IsChecked="{Binding BossKeyGlobal}"
+                          OnContent="全局" OffContent="仅应用内" VerticalAlignment="Center" MinWidth="0"/>
+
+            <Border Grid.Row="1" Grid.ColumnSpan="2" Classes="sep"/>
+
+            <StackPanel Grid.Row="2" Grid.Column="0" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+              <TextBlock Classes="rowTitle" Text="关闭窗口时最小化到托盘"/>
+              <Border Classes="help" ToolTip.Tip="关闭后程序常驻后台，点托盘图标可唤回；从托盘菜单「退出」才是真退出。">
+                <TextBlock Text="?"/>
+              </Border>
+            </StackPanel>
+            <ToggleSwitch Grid.Row="2" Grid.Column="1" IsChecked="{Binding CloseToTray}"
+                          OnContent="开" OffContent="关" VerticalAlignment="Center" MinWidth="0"/>
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <!-- 复习弹窗 -->
+      <Border Classes="card" Padding="18,12">
+        <StackPanel Spacing="0">
+          <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,2,0,8">
+            <TextBlock Text="🔔" FontSize="14"/>
+            <TextBlock Text="复习弹窗（右下角“广告”）" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"/>
+          </StackPanel>
+
+          <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
+            <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+              <TextBlock Classes="rowTitle" Text="定时弹出复习卡"/>
+              <Border Classes="help" ToolTip.Tip="伪装成右下角小广告，实为复习卡：优先抽今日 📌 学习记录里的词，当天没记录则从内嵌词典随机抽。无焦点、不打断输入，45 秒自动收起，可拖拽。">
+                <TextBlock Text="?"/>
+              </Border>
+            </StackPanel>
+            <ToggleSwitch Grid.Row="0" Grid.Column="1" IsChecked="{Binding PopupEnabled}"
+                          OnContent="开" OffContent="关" VerticalAlignment="Center" MinWidth="0"/>
+
+            <Border Grid.Row="1" Grid.ColumnSpan="2" Classes="sep"/>
+
+            <StackPanel Grid.Row="2" Grid.Column="0" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+              <TextBlock Classes="rowTitle" Text="弹出间隔"/>
+              <Border Classes="help" ToolTip.Tip="两次弹窗的最小时间，单位分钟。建议 15~30 分钟，与番茄钟节奏对齐。">
+                <TextBlock Text="?"/>
+              </Border>
+            </StackPanel>
+            <ComboBox Grid.Row="2" Grid.Column="1" HorizontalAlignment="Right" MinWidth="110"
+                      ItemsSource="{Binding PopupIntervalOptions}"
+                      SelectedItem="{Binding PopupIntervalMinutes}">
+              <ComboBox.ItemTemplate>
+                <DataTemplate x:DataType="x:Int32">
+                  <TextBlock Text="{Binding StringFormat='{}{0} 分钟'}"/>
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <!-- 发音 -->
+      <Border Classes="card" Padding="18,12">
+        <StackPanel Spacing="0">
+          <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,2,0,8">
+            <TextBlock Text="🔊" FontSize="14"/>
+            <TextBlock Text="发音" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"/>
+          </StackPanel>
+
+          <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+            <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+              <TextBlock Classes="rowTitle" Text="英文音色（Edge TTS）"/>
+              <Border Classes="help" ToolTip.Tip="句子：Edge → 系统本地；单词：有道 → Edge → 系统。在线音色全部失败时自动降级为系统本地发音（音质下降但不断流）。">
+                <TextBlock Text="?"/>
+              </Border>
+            </StackPanel>
+            <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+              <ComboBox ItemsSource="{Binding VoiceOptions}" SelectedItem="{Binding Voice}" MinWidth="200"/>
+              <Button Content="▶ 试听" Command="{Binding PreviewVoiceCommand}"
+                      ToolTip.Tip="用当前音色合成一句样例并播放"/>
+            </StackPanel>
+
+            <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Text="{Binding PreviewHint}"
+                       FontSize="12" Foreground="#C62828" Margin="0,6,0,0" TextWrapping="Wrap"
+                       IsVisible="{Binding PreviewHint, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <!-- 考试 -->
+      <Border Classes="card" Padding="18,12">
+        <StackPanel Spacing="0">
+          <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,2,0,8">
+            <TextBlock Text="✍️" FontSize="14"/>
+            <TextBlock Text="拼写考试" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"/>
+          </StackPanel>
+
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+              <TextBlock Classes="rowTitle" Text="每词挖空字母数"/>
+              <Border Classes="help" ToolTip.Tip="考试随机把单词里几个字母遮成空格让你回填。至少保留 2 个字母可见，所以太短的词会自动少挖几个。取词优先来自「学习记录」里今天的 📌。">
+                <TextBlock Text="?"/>
+              </Border>
+            </StackPanel>
+            <ComboBox Grid.Column="1" HorizontalAlignment="Right" MinWidth="110"
+                      ItemsSource="{Binding ExamBlankOptions}"
+                      SelectedItem="{Binding ExamBlanks}">
+              <ComboBox.ItemTemplate>
+                <DataTemplate x:DataType="x:Int32">
+                  <TextBlock Text="{Binding StringFormat='{}{0} 个字母'}"/>
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <!-- 关于与在线升级 -->
+      <Border Classes="card" Padding="18,12">
+        <StackPanel Spacing="0">
+          <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,2,0,8">
+            <TextBlock Text="🔄" FontSize="14"/>
+            <TextBlock Text="关于与在线升级" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"/>
+          </StackPanel>
+
+          <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
+            <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+              <TextBlock Classes="rowTitle" Text="当前版本"/>
+              <Border Classes="help" ToolTip.Tip="升级用 GitHub Release 的 tag（如 v1.4.0）与此版本做数字比较；安装包命名约定：win-x64 / mac-arm64 / mac-x64。">
+                <TextBlock Text="?"/>
+              </Border>
+            </StackPanel>
+            <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding CurrentVersionText}"
+                       FontFamily="Consolas" VerticalAlignment="Center" Opacity="0.85"/>
+
+            <Border Grid.Row="1" Grid.ColumnSpan="2" Classes="sep"/>
+
+            <StackPanel Grid.Row="2" Grid.Column="0" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+              <TextBlock Classes="rowTitle" Text="GitHub 仓库"/>
+              <Border Classes="help" ToolTip.Tip="官方仓库，写死不可改。升级信息取自 api.github.com/repos/XuMengEnEli/Parrot/releases/latest，安装包放该 Release 的附件里（命名 Parrot-win-x64 / Parrot-mac-arm64 / Parrot-mac-x64）；点「前往下载」用浏览器打开安装包直链。">
+                <TextBlock Text="?"/>
+              </Border>
+            </StackPanel>
+            <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding RepoDisplay}"
+                       FontFamily="Consolas" VerticalAlignment="Center" Opacity="0.85"/>
+
+            <Border Grid.Row="3" Grid.ColumnSpan="2" Classes="sep"/>
+
+            <StackPanel Grid.Row="4" Grid.Column="0" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+              <TextBlock Classes="rowTitle" Text="启动时自动检查"/>
+              <Border Classes="help" ToolTip.Tip="静默后台检查；发现新版本只在窗口标题提示一行，不弹窗不打扰。">
+                <TextBlock Text="?"/>
+              </Border>
+            </StackPanel>
+            <ToggleSwitch Grid.Row="4" Grid.Column="1" IsChecked="{Binding UpdateAuto}"
+                          OnContent="开" OffContent="关" VerticalAlignment="Center" MinWidth="0"/>
+          </Grid>
+
+          <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,10,0,0">
+            <Button Content="🔍 检查更新" Command="{Binding CheckUpdateCommand}"
+                    IsEnabled="{Binding Checking, Converter={x:Static BoolConverters.Not}}"/>
+            <Button Content="🌐 前往下载" Command="{Binding OpenDownloadCommand}"
+                    IsVisible="{Binding UpdateAvailable}"/>
+            <TextBlock Text="{Binding UpdateStatus}" FontSize="12" Opacity="0.75"
+                       VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="420"
+                       IsVisible="{Binding UpdateStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>
