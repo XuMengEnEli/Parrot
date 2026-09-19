@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 namespace Parrot.Core.TextProcessing;
 
 /// <summary>可发音热点：句尾锚点（PDF pt 坐标，y-up），供原图视图叠加 🔊。</summary>
-public sealed record SpeakSpot(double RightPt, double MidYPt, string Speak);
+public sealed record SpeakSpot(double RightPt, double MidYPt, string Speak, string? Gloss = null);
 
 /// <summary>
 /// 原图叠加层用"句子热点"提取（用户方案：不重排版，直接在 PDF 渲染层对应句尾挂 🔊）：
@@ -33,6 +33,9 @@ public static class OverlayLayout
             if (!LayoutBuilder.FirstIsLatinish(ln.Text) && !LayoutBuilder.StartsBullet(ln.Text))
             {
                 FlushPara();
+                // 但它是上一句的释义：📌 整句记入时要用（扫描件里没有"块"可查，只能就地挂上）
+                if (spots.Count > 0 && IsGlossLine(ln.Text))
+                    spots[^1] = spots[^1] with { Gloss = JoinGloss(spots[^1].Gloss, ln.Text) };
                 continue;
             }
             var kind = LayoutBuilder.Classify(ln, body);
@@ -52,6 +55,20 @@ public static class OverlayLayout
         FlushPara();
         return spots;
     }
+
+    /// <summary>
+    /// 是不是上一句的中文译文行。以【/〖开头的行是栏目标签或下一个词条的释义（【真题复现】、【频次 61】、
+    /// 【释义】n.公司），拼进上一句的释义只会污染记录。
+    /// </summary>
+    private static bool IsGlossLine(string text)
+    {
+        var t = text.Trim();
+        if (t.Length == 0 || t[0] is '【' or '〖') return false;
+        return LayoutBuilder.HasCjk(t);
+    }
+
+    private static string JoinGloss(string? existing, string addition)
+        => string.IsNullOrEmpty(existing) ? addition.Trim() : $"{existing} {addition.Trim()}";
 
     /// <summary>段落行合并 → 断句 → 用"片段在拼接串中的偏移"回找所属行，锚定最后一条行右缘。</summary>
     private static void AddParagraph(List<PdfLine> lines, List<SpeakSpot> spots)
@@ -94,12 +111,21 @@ public static class OverlayLayout
 
     private static readonly Regex SpaceRun = new(@"\s+", RegexOptions.Compiled);
 
-    /// <summary>发音文本去首尾非字非数残留（OCR 常把 "． ·" "〖" 挂在句界）。</summary>
+    /// <summary>
+    /// 发音文本去首尾非字非数残留（OCR 常把 " ·" "〖" 挂在句界）。
+    /// 真正的句末标点要留下：📌 靠它判断"这一条是完整句子"，文本视图的发音文本本来就带标点。
+    /// </summary>
     private static string TrimSpeak(string s)
     {
         int a = 0, b = s.Length;
         while (a < b && !char.IsLetterOrDigit(s[a])) a++;
+        int tail = b;
         while (b > a && !char.IsLetterOrDigit(s[b - 1])) b--;
-        return s[a..b];
+        var trimmed = s[a..b];
+        if (trimmed.Length == 0) return trimmed;
+        // 被剥掉的尾部里找回句末标点（全角的那几个已由 EnglishOnly 归一成半角）
+        for (int i = tail - 1; i >= b; i--)
+            if ("!.?".Contains(s[i])) return trimmed + s[i];
+        return trimmed;
     }
 }

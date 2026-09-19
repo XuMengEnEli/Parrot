@@ -17,7 +17,7 @@ public sealed class StudyLogRepository(LocalDatabase db)
     /// <summary>记入某天的学习列表；同日同词已存在则只刷新出处/释义为空时补齐，返回是否新增。</summary>
     public bool Add(string word, string meaning, string note, DateOnly day)
     {
-        word = word.Trim().ToLowerInvariant();
+        word = TermKey.Of(word);
         if (word.Length == 0) return false;
         using var conn = db.Open();
         using var cmd = conn.CreateCommand();
@@ -56,7 +56,7 @@ public sealed class StudyLogRepository(LocalDatabase db)
         using var cmd = conn.CreateCommand();
         cmd.CommandText = "DELETE FROM study_log WHERE day=$d AND word=$w";
         cmd.Parameters.AddWithValue("$d", day.ToString("yyyy-MM-dd"));
-        cmd.Parameters.AddWithValue("$w", word.Trim().ToLowerInvariant());
+        cmd.Parameters.AddWithValue("$w", TermKey.Of(word));
         return cmd.ExecuteNonQuery() > 0;
     }
 
@@ -138,7 +138,7 @@ public sealed class StudyLogRepository(LocalDatabase db)
         using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT 1 FROM study_log WHERE day=$d AND word=$w";
         cmd.Parameters.AddWithValue("$d", day.ToString("yyyy-MM-dd"));
-        cmd.Parameters.AddWithValue("$w", word.Trim().ToLowerInvariant());
+        cmd.Parameters.AddWithValue("$w", TermKey.Of(word));
         return cmd.ExecuteScalar() is not null;
     }
 }

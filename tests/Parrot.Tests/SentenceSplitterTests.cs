@@ -41,4 +41,27 @@ public class SentenceSplitterTests
         Assert.Empty(SentenceSplitter.Split(""));
         Assert.Empty(SentenceSplitter.Split("中文内容"));
     }
+
+    [Fact]
+    public void EnglishOnly_FullWidthEnderAfterLetter_BecomesRealSentenceEnd()
+    {
+        // 讲义第 3 页 "How teenagers develop prosociality？"：OCR 给全角问号，📌 要靠它认出整句
+        Assert.Equal("How teenagers develop prosociality?",
+            SentenceSplitter.EnglishOnly("How teenagers develop prosociality？"));
+    }
+
+    [Fact]
+    public void EnglishOnly_ChineseOnlyLine_ItsOwnPeriodIsNotAnEnglishSentenceEnd()
+    {
+        Assert.Null(SentenceSplitter.EnglishOnly("这行纯中文没有任何英文。"));
+    }
+
+    [Fact]
+    public void EnglishOnly_MixedLine_KeepsOnlyTheEnglishSentenceEnder()
+    {
+        // 扫描件里译文常和英文挤在同一行：两个全角问号只有字母后那个是句界
+        var speak = SentenceSplitter.EnglishOnly("How teenagers develop prosociality？青少年如何发展亲社会性？");
+        Assert.Equal("How teenagers develop prosociality?", speak);
+        Assert.True(PhraseMatcher.IsSentence(speak!)); // 📌 因此会整句记入
+    }
 }

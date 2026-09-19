@@ -31,6 +31,7 @@ public partial class App : Application
 
     private MainWindow? _main;
     private PopupCardWindow? _popup;
+    private CelebrationWindow? _celebration;
     private PopupCardViewModel? _popupVm;
     private DispatcherTimer? _popupTimer;
     private DispatcherTimer? _popupAutoHide;
@@ -58,6 +59,17 @@ public partial class App : Application
                 // 词库播种失败不阻塞启动（弹窗有示例兜底）
             }
 
+            // 曲线上线前钉住的老词补建排期（幂等；已过期的一律落到今日队列）
+            try
+            {
+                Services.GetRequiredService<ReviewRepository>()
+                    .BackfillFromStudyLog(DateOnly.FromDateTime(DateTime.Now));
+            }
+            catch
+            {
+                // 回填失败只影响当日复习队列，不影响其他功能
+            }
+
             _main = new MainWindow
             {
                 DataContext = new ViewModels.MainWindowViewModel(Services),
@@ -71,6 +83,10 @@ public partial class App : Application
             popupVm.Closed += () => _popup?.Hide();
             _popupVm = popupVm;
             _popup = new PopupCardWindow { DataContext = popupVm };
+
+            // 番茄钟到点：VM 只报"哪一阶段完成了 + 卡片文案"，窗口的事全在这里
+            if (_main.DataContext is ViewModels.MainWindowViewModel mainVm)
+                mainVm.Pomodoro.CelebrationRequested += c => Dispatcher.UIThread.Post(() => ShowCelebration(c));
 
             WireTray();
             WirePopupCycle();
@@ -141,6 +157,13 @@ public partial class App : Application
         _popup.ShowAtCorner();
         _popupAutoHide?.Stop();
         _popupAutoHide?.Start();
+    }
+
+    /// <summary>番茄钟到点庆祝。主窗被收起（老板键/托盘）时不弹——topmost 卡片正是要躲的东西。</summary>
+    private void ShowCelebration(Parrot.UI.ViewModels.PomodoroCelebration celebration)
+    {
+        if (_main?.IsVisible != true) return;
+        (_celebration ??= new CelebrationWindow()).ShowCard(celebration);
     }
 
     private void WireBossKeyHook()
@@ -224,6 +247,7 @@ public partial class App : Application
         var app = Current as App;
         app?._main?.Hide();
         app?._popup?.Hide();
+        app?._celebration?.HideCard();
     }
 
     private void ShowMainWindow()
@@ -260,6 +284,8 @@ public partial class App : Application
         sc.AddSingleton<SettingsRepository>();
         sc.AddSingleton<WordbookRepository>();
         sc.AddSingleton<StudyLogRepository>();
+        // 艾宾浩斯复习进度（每词一行，与词典表分开；📌 起锚、到期队列驱动复习页与考试）
+        sc.AddSingleton<ReviewRepository>();
         // 降级链：句子→Edge→系统；单词→有道→Edge→系统
         sc.AddSingleton<YoudaoTtsService>();
         sc.AddSingleton<EdgeTtsService>();
@@ -281,12 +307,13 @@ public partial class App : Application
         sc.AddSingleton<IOcrService, Parrot.Ocr.Mac.MacVisionOcrService>();
 #endif
 
-        // 弹窗卡片源：今日学习记录（📌）优先 → 内嵌词库随机 → 内置示例兜底
+        // 弹窗卡片源：记忆曲线今日到期词优先 → 今日学习记录（📌）→ 内嵌词库随机 → 内置示例兜底
         sc.AddSingleton<ICardSource>(sp =>
         {
             var wb = new WordbookCardSource(
                 sp.GetRequiredService<WordbookRepository>(),
-                sp.GetRequiredService<StudyLogRepository>());
+                sp.GetRequiredService<StudyLogRepository>(),
+                sp.GetRequiredService<ReviewRepository>());
             return new DelegatingCardSource(() => wb.NextCard() ?? SampleCards.RandomCard());
         });
 

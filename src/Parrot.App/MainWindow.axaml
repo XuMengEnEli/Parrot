@@ -2,13 +2,15 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:Parrot.App.ViewModels"
         xmlns:uvm="clr-namespace:Parrot.UI.ViewModels;assembly=Parrot.UI"
+        xmlns:uiv="clr-namespace:Parrot.UI.Views;assembly=Parrot.UI"
         x:Class="Parrot.App.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Title="鹦鹉 Parrot"
         Icon="/Assets/app-256.png"
         Width="1080" Height="700"
         MinWidth="800" MinHeight="480"
-        WindowStartupLocation="CenterScreen">
+        WindowStartupLocation="CenterScreen"
+        WindowState="Maximized">
 
   <Grid ColumnDefinitions="190,*">
     <DockPanel Grid.Column="0" Margin="0">
@@ -41,9 +43,14 @@
       </ListBox>
     </DockPanel>
 
-    <ContentControl Grid.Column="1"
-                    Content="{Binding SelectedPage}"
-                    HorizontalContentAlignment="Stretch"
-                    VerticalContentAlignment="Stretch"/>
+    <!-- 五个页面常驻可视树，切页只改 IsVisible：视图不重建，讲义滚到哪儿、缩放选到哪儿，切回来都还在原地
+         （原先是 ContentControl + DataTemplate，每次切页新建视图，滚动位置必然归零） -->
+    <Panel Grid.Column="1">
+      <uiv:ReaderPage DataContext="{Binding Reader}" IsVisible="{Binding IsSelected}"/>
+      <uiv:PomodoroPage DataContext="{Binding Pomodoro}" IsVisible="{Binding IsSelected}"/>
+      <uiv:StudyLogPage DataContext="{Binding StudyLog}" IsVisible="{Binding IsSelected}"/>
+      <uiv:ExamPage DataContext="{Binding Exam}" IsVisible="{Binding IsSelected}"/>
+      <uiv:SettingsPage DataContext="{Binding Settings}" IsVisible="{Binding IsSelected}"/>
+    </Panel>
   </Grid>
 </Window>

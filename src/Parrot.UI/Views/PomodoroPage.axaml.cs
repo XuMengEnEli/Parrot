@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
@@ -32,9 +33,20 @@ public partial class PomodoroPage : UserControl
     protected override void OnLoaded(RoutedEventArgs e)
     {
         base.OnLoaded(e);
-        // 首帧后画一次（AvaPlot 需要已附加才有有效尺寸）
-        DispatcherTimer.RunOnce(() => { if (!_plotDrawn || _plotDirty) DrawStats(); }, TimeSpan.FromMilliseconds(100));
+        ScheduleDraw();
     }
+
+    /// <summary>本页现在常驻主窗可视树（切页只切 IsVisible），Loaded 只在启动时来一次，
+    /// 所以"切回来补画统计图"得挂在自身可见性变化上。</summary>
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property == IsVisibleProperty && IsVisible) ScheduleDraw();
+    }
+
+    private void ScheduleDraw()
+        // 延后一帧（AvaPlot 需要已附加并完成布局才有有效尺寸）
+        => DispatcherTimer.RunOnce(() => { if (!_plotDrawn || _plotDirty) DrawStats(); }, TimeSpan.FromMilliseconds(100));
 
     private void OnVmChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
@@ -53,6 +65,11 @@ public partial class PomodoroPage : UserControl
     private void DrawStats()
     {
         if (DataContext is not PomodoroPageViewModel vm) return;
+        if (!IsEffectivelyVisible) // 启动时本页隐藏：画布尺寸为 0，画了也白画，等切回再画
+        {
+            _plotDirty = true;
+            return;
+        }
         if (!StatsPlot.IsVisible) // 统计 Tab 未选中时 AvaPlot 尺寸为 0，画了也白画
         {
             _plotDirty = true;

@@ -45,6 +45,18 @@ public class WordbookRepositoryTests : IDisposable
     }
 
     [Fact]
+    public void MatchPhrases_SkipsWebMinedFragments_KeepsRealCollocations()
+    {
+        _repo.Import("colour in", "", "[网络] 颜色", null, Today);
+        _repo.Import("in autumn", "", "在秋天", null, Today);
+        _repo.Import("put up with", "", "忍受, 容忍", null, Today);
+
+        // "colour in" 是 ECDICT 里网页抓取凑数的碎片，命中它会把句子切成无意义的两三个词
+        Assert.Equal(["in autumn"], _repo.MatchPhrases("Leaves change colour in autumn."));
+        Assert.Equal(["put up with"], _repo.MatchPhrases("The rules are put up with in accordance with the law."));
+    }
+
+    [Fact]
     public void CardSource_PrefersStudyLog_ThenDictionary()
     {
         var src = new WordbookCardSource(_repo);

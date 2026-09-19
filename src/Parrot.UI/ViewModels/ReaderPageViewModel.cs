@@ -34,19 +34,23 @@ public sealed partial class ReaderPageViewModel : PageViewModelBase
     private readonly IOcrService? _ocr;
     private readonly StudyLogRepository? _studyLog;
     private readonly WordbookRepository? _wordbook;
-    /// <summary>今日已📌的词（📌按钮初始态 + 重复点去重，切页/重建 VM 不丢状态）。</summary>
+    private readonly ReviewRepository? _review;
+    /// <summary>今日已📌的词条（词或短语：📌按钮初始态 + 重复点去重，切页/重建 VM 不丢状态）。</summary>
     private readonly HashSet<string> _recordedWords = new(StringComparer.Ordinal);
     private CancellationTokenSource? _ocrCts;
     private bool _autoSwitching;    // 程序性 ViewMode 切换不算用户操作
+    private string? _ocrPendingHint; // "正在后台识别"那句进行态说明，收尾时按原文精确撤销
 
     public ReaderPageViewModel(ITtsService tts, IAudioPlayer audio, IOcrService? ocr = null, bool restoreRecent = true,
-        PomodoroPageViewModel? pomodoro = null, StudyLogRepository? studyLog = null, WordbookRepository? wordbook = null)
+        PomodoroPageViewModel? pomodoro = null, StudyLogRepository? studyLog = null, WordbookRepository? wordbook = null,
+        ReviewRepository? review = null)
     {
         _tts = tts;
         _audio = audio;
         _ocr = ocr;
         _studyLog = studyLog;
         _wordbook = wordbook;
+        _review = review;
         Pomodoro = pomodoro;
         Documents = [];
         if (studyLog is not null)
@@ -215,12 +219,14 @@ public sealed partial class ReaderPageViewModel : PageViewModelBase
         if (majority)
         {
             ScanHint = ocrReady
-                ? $"本文档 {scannedPages.Count}/{doc.PageCount} 页为扫描件（无文本层），系统 OCR 正在后台把句内 🔊 标注到原图上（离线），稍候即可在原图上逐句点读，也可先睹为快"
+                ? _ocrPendingHint = $"本文档 {scannedPages.Count}/{doc.PageCount} 页为扫描件（无文本层），系统 OCR 正在后台把句内 🔊 标注到原图上（离线），稍候即可在原图上逐句点读，也可先睹为快"
                 : $"本文档 {scannedPages.Count}/{doc.PageCount} 页为扫描件（无文本层，本机 OCR 不可用），已自动切到原图视图；有文字的页可在“视图→文本视图”阅读";
             SetViewModeAuto(1); // 原图=原版式，热点随 OCR 进度逐页出现
         }
         if (ocrReady && todo.Count > 0)
             _ = OcrFillAsync(doc, todo);
+        else if (ScanHint == _ocrPendingHint)
+            ScanHint = null; // 扫描页早识别过了：没有"稍候"这回事，别挂着进行态
     }
 
     private void SetViewModeAuto(int value)
@@ -265,8 +271,24 @@ public sealed partial class ReaderPageViewModel : PageViewModelBase
 
         if (ok > 0 && ReferenceEquals(SelectedDocument, doc)
             && !cts.IsCancellationRequested && ViewModeIndex == 1)
-            ScanHint = $"OCR 完成：已在 {ok} 页的原图上标注句内 🔊，点句子右侧的喇叭即可发音";
+            await ShowNoticeAsync($"OCR 完成：已在 {ok} 页的原图上标注句内 🔊，点句子右侧的喇叭即可发音");
+        else if (ReferenceEquals(SelectedDocument, doc) && ScanHint == _ocrPendingHint)
+            ScanHint = null; // 一页都没标出来（整册图形页）：进行态说明同样要撤掉
     }
+
+    /// <summary>
+    /// 顶部说明条的"通知"用法：亮一会儿就自己收起，不长期占着阅读区
+    /// （扫描件说明是状态、会一直在；完成/结果类只报一嗓子）。
+    /// 期间若已被别的文案顶掉（切文档、手动切回文本视图）就不动它。
+    /// </summary>
+    private async Task ShowNoticeAsync(string text, int seconds = OcrNoticeSeconds)
+    {
+        ScanHint = text;
+        await Task.Delay(seconds * 1000);
+        if (ScanHint == text) ScanHint = null;
+    }
+
+    private const int OcrNoticeSeconds = 6;
 
     /// <summary>
     /// 识别并发度：Vision 每页是一个 osascript 子进程（各自加载 Vision 模型，内存按页数涨），
@@ -385,9 +407,10 @@ public sealed partial class ReaderPageViewModel : PageViewModelBase
             case PdfBlockKind.Paragraph:
             {
                 if (b.Fragments.Count == 0) return null;
-                var items = b.Fragments
-                    .Select(f => NewSentence(f.Display, f.Speak))
-                    .ToList();
+                var frags = b.Fragments;
+                var items = new List<SentenceItemViewModel>(frags.Count);
+                for (int i = 0; i < frags.Count; i++)
+                    items.Add(NewSentence(frags[i].Display, frags[i].Speak, ChineseAfter(frags, i)));
                 return b.Kind == PdfBlockKind.ListItem
                     ? new ListBlockViewModel(items)
                     : new ParagraphViewModel(items);
@@ -400,46 +423,112 @@ public sealed partial class ReaderPageViewModel : PageViewModelBase
     private SentenceItemViewModel? WrapSpeak(PdfFragment f)
         => f.Speak is null ? null : NewSentence(f.Display, f.Speak);
 
-    /// <summary>原图热点复用同一个发音 VM（Display 不上屏，只给按钮用）。</summary>
-    internal SentenceItemViewModel CreateSpeak(string speak) => NewSentence(speak, speak);
+    /// <summary>原图热点复用同一个发音 VM（Display 不上屏，只给按钮用）；gloss 是同页紧跟其后的中文译文。</summary>
+    internal SentenceItemViewModel CreateSpeak(string speak, string? gloss = null) => NewSentence(speak, speak, gloss);
 
     // ---------- 📌 记入当日学习（需求：在小喇叭旁边加个按钮） ----------
 
-    /// <summary>统一入口：带发音的 VM 都从这造，📌 初始态从今日记录缓存恢复。</summary>
-    private SentenceItemViewModel NewSentence(string display, string? speak)
+    /// <summary>📌 的初始态：这句要记的那批词条（短语优先）是否都已在今日表里。</summary>
+    private SentenceItemViewModel NewSentence(string display, string? speak, string? gloss = null)
     {
-        var vm = new SentenceItemViewModel(display, speak, _tts, _audio,
-            _studyLog is null ? null : ToggleRecord);
-        var w = Headword(speak ?? display);
-        if (w is not null) vm.IsRecorded = _recordedWords.Contains(w);
+        if (_studyLog is null) return new SentenceItemViewModel(display, speak, _tts, _audio, terms: [], gloss: gloss);
+        var terms = ComputeRecordTerms(speak ?? display);
+        var vm = new SentenceItemViewModel(display, speak, _tts, _audio, terms, TogglePinned, gloss);
+        vm.IsRecorded = terms.Count > 0 && terms.All(_recordedWords.Contains);
         return vm;
     }
 
-    /// <summary>点📌：没记则记入当天（连释义快照+出处句一起存），已记则从当天移除。</summary>
-    private void ToggleRecord(SentenceItemViewModel vm)
+    /// <summary>
+    /// 讲义里例句的译文通常单独成行（纯中文，不挂 🔊）：整句记入时这句中文就是它的释义。
+    /// 从第 i 段往后收连续的中文片段，遇到下一个带英文的片段即停。
+    /// </summary>
+    private static string? ChineseAfter(IReadOnlyList<PdfFragment> frags, int i)
     {
-        if (_studyLog is null) return;
-        var word = Headword(vm.Speak ?? vm.Text);
-        if (word is null) return;
-        var today = DateOnly.FromDateTime(DateTime.Now);
-        if (vm.IsRecorded)
+        var parts = new List<string>();
+        for (int j = i + 1; j < frags.Count && frags[j].Speak is null; j++)
         {
-            if (_studyLog.Remove(word, today)) _recordedWords.Remove(word);
+            var text = frags[j].Display.Trim();
+            if (!text.Any(c => c >= 0x4e00 && c <= 0x9fff)) break;
+            parts.Add(text);
         }
-        else
-        {
-            RecordWord(vm.Speak ?? vm.Text, vm.Text);
-        }
+        return parts.Count > 0 ? string.Join(" ", parts) : null;
     }
 
-    /// <summary>把一个句子/词行里的代表词记入今日学习（📌 按钮与单测共用入口）。</summary>
-    public void RecordWord(string text, string note)
+    /// <summary>
+    /// 📌 单击：没记则把这句的词条整批记入当天，已记则整批移除；返回新的记录态。
+    /// 记哪几条只在 <see cref="ComputeRecordTerms"/> 一处决定。
+    /// </summary>
+    public bool TogglePinned(SentenceItemViewModel vm)
+    {
+        if (_studyLog is null) return vm.IsRecorded;
+        var terms = vm.Terms;
+        if (terms.Count == 0) return vm.IsRecorded; // 纯中文/纯数字句：没东西可记
+        if (!vm.IsRecorded)
+        {
+            foreach (var term in terms) RecordTerm(term, vm.Text, vm.Gloss);
+            return true;
+        }
+
+        var today = DateOnly.FromDateTime(DateTime.Now);
+        bool removed = false;
+        foreach (var term in terms)
+        {
+            if (!_studyLog.Remove(term, today)) continue;
+            _recordedWords.Remove(term);
+            removed = true;
+        }
+        if (removed) _review?.PruneUnpinned(); // 没有任何一天记录挂靠了就退出复习队列
+        return false;
+    }
+
+    /// <summary>
+    /// 把一个句子/词行整批记入今日学习：批次只由 <see cref="ComputeRecordTerms"/> 决定。
+    /// 📌 走 <see cref="TogglePinned"/>（能同时撤销），这条给"只记不撤"的调用方与单测。
+    /// </summary>
+    public void RecordSentence(string text, string note, string? gloss = null)
+    {
+        foreach (var term in ComputeRecordTerms(text)) RecordTerm(term, note, gloss);
+    }
+
+    /// <summary>
+    /// 这一行要记哪几条：完整例句整句记入（"Leaves change colour in autumn." 记全句，
+    /// 不该被词典命中切成 "in autumn" 这种碎片）；词组行/词条行才走三级判定——
+    /// ① <see cref="WordbookRepository.MatchPhrases"/> 命中词典的短语（最长优先、互不重叠）；
+    /// ② 整行本身就是一个搭配（讲义词表行，如 "social pressure"——教材搭配 ECDICT 常不收录）；
+    /// ③ 都没有才退回代表词。"put up with" 不该只记成 "put"，"social pressure" 也不该只记成 "social"。
+    /// 📌 的记入、初始 ✅ 态、悬停说明都以这里为准（全量 76 万词库实测逐句 0.083ms）。
+    /// </summary>
+    public IReadOnlyList<string> ComputeRecordTerms(string text)
+    {
+        if (PhraseMatcher.IsSentence(text)) return [text.Trim()];
+        if (_wordbook is null) return Headword(text) is { } w ? [w] : [];
+        var phrases = _wordbook.MatchPhrases(text);
+        if (phrases.Count > 0) return phrases;
+        if (PhraseMatcher.AsWholePhrase(text) is { } whole) return [whole];
+        return Headword(text) is { } word ? [word] : [];
+    }
+
+    private void RecordTerm(string term, string note, string? gloss = null)
     {
         if (_studyLog is null) return;
-        var word = Headword(text);
-        if (word is null) return;
-        _studyLog.Add(word, _wordbook?.Lookup(word)?.Translation ?? "", note, DateOnly.FromDateTime(DateTime.Now));
-        _recordedWords.Add(word);
+        var today = DateOnly.FromDateTime(DateTime.Now);
+        // 整句记入时词典必然查不到，释义用紧跟其后的中文行（GlossInLine 只认同一行里的中文）
+        _studyLog.Add(term, _wordbook?.Lookup(term)?.Translation ?? gloss ?? GlossInLine(term, note), note, today);
+        _review?.ScheduleFirst(term, today); // 钉住即起锚：首访排在 1 天后
+        _recordedWords.Add(term);
+    }
+
+    private static readonly Regex CjkGloss = new(@"[\u4e00-\u9fff][\u4e00-\u9fffA-Za-z0-9，、；：（）\s]*", RegexOptions.Compiled);
+
+    /// <summary>
+    /// 词库里查不到的讲义搭配，释义就地取同一行后面的中文注释（"social class 社会阶层" → 社会阶层）。
+    /// 取不到就是空——原图视图的热点文本只有英文，中文注释不在同一段里。
+    /// </summary>
+    private static string GlossInLine(string term, string note)
+    {
+        int at = note.IndexOf(term, StringComparison.OrdinalIgnoreCase);
+        if (at < 0) return "";
+        return CjkGloss.Match(note, at + term.Length) is { Success: true } m ? m.Value.Trim() : "";
     }
 
     private static readonly Regex WordToken = new(@"[A-Za-z][A-Za-z'’-]*", RegexOptions.Compiled);
@@ -465,6 +554,9 @@ public sealed partial class ReaderPageViewModel : PageViewModelBase
         "was", "were", "be", "been", "being", "it", "its", "as", "not", "no", "but", "if", "then",
         "than", "so", "do", "does", "did", "have", "has", "had", "will", "would", "can", "could",
         "this", "that", "these", "those", "from", "there", "here", "when", "while", "which", "who",
+        "what", "where", "why", "how",
+        "he", "him", "his", "she", "her", "they", "them", "their", "we", "us", "our", "you", "your",
+        "i", "me", "my", "mine", "itself", "himself", "herself", "themselves", "oneself", "should",
     };
 
     /// <summary>扫描件占位块上的"查看原图"→ 切到原图模式并定位该页。</summary>
@@ -659,7 +751,7 @@ public sealed partial class PageCardViewModel : ObservableObject
         Overlays.Clear();
         foreach (var s in _spots)
             Overlays.Add(new OverlayItemViewModel(
-                _owner.CreateSpeak(s.Speak),
+                _owner.CreateSpeak(s.Speak, s.Gloss),
                 s.RightPt * ppp + 6,                 // 句尾右缘外一点
                 (_pageHeightPt - s.MidYPt) * ppp - 14)); // y-up→y-down，按钮垂直居中于行
     }
@@ -753,17 +845,25 @@ public sealed partial class SentenceItemViewModel : ObservableObject
 {
     private readonly ITtsService _tts;
     private readonly IAudioPlayer _audio;
-    private readonly Action<SentenceItemViewModel>? _record;
+    private readonly Func<SentenceItemViewModel, bool>? _record;
 
     public SentenceItemViewModel(string display, string? speak, ITtsService tts, IAudioPlayer audio,
-        Action<SentenceItemViewModel>? record = null)
+        IReadOnlyList<string> terms, Func<SentenceItemViewModel, bool>? record = null, string? gloss = null)
     {
         Text = display;
         Speak = speak;
         _tts = tts;
         _audio = audio;
         _record = record;
+        Terms = terms;
+        Gloss = gloss;
     }
+
+    /// <summary>这句要记入的那批词条（短语优先，可能多条）：创建方算好后一次性注入，不可变。</summary>
+    public IReadOnlyList<string> Terms { get; }
+
+    /// <summary>紧随其后的中文译文行（整句记入时当释义用），没有则 null。</summary>
+    public string? Gloss { get; }
 
     /// <summary>展示文本（原文，含中文/音标）。</summary>
     public string Text { get; }
@@ -781,16 +881,25 @@ public sealed partial class SentenceItemViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(RecordTip))]
     private bool _isRecorded;
 
-    /// <summary>已记录用 ✅，未记录用 📌（同一按钮二次点击=取消记录）。</summary>
+    /// <summary>已记录用 ✅，未记录用 📌（同一按钮二次点击=取消整批记录）。</summary>
     public string RecordGlyph => IsRecorded ? "✅" : "📌";
-    public string RecordTip => IsRecorded ? "已在今日学习列表 · 再点移除" : "记入今日学习列表（弹窗复习与考试从这里取词）";
+
+    /// <summary>悬停说清"这句会记哪几条"：多条短语一起记、一起撤。</summary>
+    public string RecordTip => Terms.Count switch
+    {
+        0 => IsRecorded ? "已在今日学习列表 · 再点移除"
+                        : "记入今日学习列表（句中的词典短语优先，弹窗复习与考试从这里取词）",
+        1 => IsRecorded ? $"已记入今日学习：{Terms[0]} · 再点移除" : $"记入今日学习：{Terms[0]}",
+        _ => IsRecorded ? $"已记入今日学习 {Terms.Count} 条：{string.Join(" · ", Terms)} · 再点一起移除"
+                        : $"记入今日学习 {Terms.Count} 条：{string.Join(" · ", Terms)}",
+    };
 
     [RelayCommand]
     private void Record()
     {
         if (_record is null) return;
-        _record(this); // 仓储层按 IsRecorded 旧值决定 添加/移除
-        IsRecorded = !IsRecorded;
+        // 记入还是撤销、记哪几条全由阅读器定，返回值即新的记录态（没词条可记时不会被点成 ✅）
+        IsRecorded = _record(this);
     }
 
     [ObservableProperty]

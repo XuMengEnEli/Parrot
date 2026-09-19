@@ -75,6 +75,15 @@ public sealed class LocalDatabase
                 PRIMARY KEY (day, word)                 -- 同一天重复点📌自动去重
             );
             CREATE INDEX IF NOT EXISTS idx_study_day ON study_log(day);
+            CREATE TABLE IF NOT EXISTS review_state (
+                word      TEXT PRIMARY KEY,           -- 小写规范化，与 study_log.word 同口径
+                first_day TEXT NOT NULL,              -- 首次 📌 钉住的日期
+                visits    INTEGER NOT NULL DEFAULT 0, -- 已回访次数 = 艾宾浩斯档位下标
+                due       TEXT    NOT NULL,           -- 下次到期 yyyy-MM-dd
+                last_seen TEXT NOT NULL DEFAULT '',   -- 最近一次进入当日复习队列的日期（同日只推进一次）
+                lapses    INTEGER NOT NULL DEFAULT 0  -- 答错回退次数，只做优先级与展示
+            );
+            CREATE INDEX IF NOT EXISTS idx_review_due ON review_state(due);
             """;
         cmd.ExecuteNonQuery();
     }

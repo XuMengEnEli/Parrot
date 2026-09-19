@@ -17,8 +17,8 @@ public class OverlayLayoutTests
         var spot = Assert.Single(OverlayLayout.BuildSpots(lines));
         Assert.Equal(260, spot.RightPt);
         Assert.Equal(674.5, spot.MidYPt, 3);
-        // 尾随句点被 TrimSpeak 剥掉（TTS 不需要），跨行按空格拼接
-        Assert.Equal("Technology has changed our daily life in many ways", spot.Speak);
+        // 跨行按空格拼接；句末标点保留（📌 靠它认出这是整句），只剥 OCR 挂在句界的残留
+        Assert.Equal("Technology has changed our daily life in many ways.", spot.Speak);
     }
 
     [Fact]
@@ -30,7 +30,7 @@ public class OverlayLayoutTests
             new("cation tools work.", 60, 280, 682, 667, 11, false),
         };
         var spot = Assert.Single(OverlayLayout.BuildSpots(lines));
-        Assert.Equal("modern communication tools work", spot.Speak);
+        Assert.Equal("modern communication tools work.", spot.Speak);
         Assert.Equal(280, spot.RightPt); // 句末行 = 第二行
     }
 
@@ -63,6 +63,26 @@ public class OverlayLayoutTests
     }
 
     [Fact]
+    public void Chinese_Translation_Line_Becomes_Previous_Spot_Gloss()
+    {
+        var lines = new List<PdfLine>
+        {
+            new("Leaves change colour in autumn.", 60, 300, 480, 685, 11, false),
+            new("树叶在秋天改变颜色。", 60, 280, 300, 667, 11, false), // 不产热点，但它是上一句的释义
+            new("a change in the weather", 60, 250, 420, 640, 11, false),
+            new("天气的变化", 60, 230, 200, 622, 11, false),
+            new("【真题复现】", 60, 200, 260, 600, 12, false), // 符号标题：不挂到任何句子上
+            new("Company profits were lower.", 60, 180, 430, 580, 11, false),
+            new("【释义】n.公司", 60, 160, 250, 562, 11, false), // 下一个词条的释义栏，不是上一句的译文
+        };
+        var spots = OverlayLayout.BuildSpots(lines);
+        Assert.Equal(3, spots.Count);
+        Assert.Equal("树叶在秋天改变颜色。", spots[0].Gloss);
+        Assert.Equal("天气的变化", spots[1].Gloss);
+        Assert.Null(spots[2].Gloss);
+    }
+
+    [Fact]
     public void Two_Column_Table_Cells_Do_Not_Merge_Across_Columns()
     {
         // 实扫双栏词表：左栏词头+音标，右栏例句，两格同 y、x 区间不相交。
@@ -78,6 +98,6 @@ public class OverlayLayoutTests
         Assert.Equal(2, spots.Count);
         Assert.Equal("increase", spots[0].Speak);
         Assert.Equal(210, spots[0].RightPt); // 锚在自己的格子右缘
-        Assert.Equal("We need to increase productivity", spots[1].Speak);
+        Assert.Equal("We need to increase productivity.", spots[1].Speak);
     }
 }

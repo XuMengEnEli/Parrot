@@ -1,0 +1,97 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:uvm="clr-namespace:Parrot.UI.ViewModels;assembly=Parrot.UI"
+        x:Class="Parrot.App.CelebrationWindow"
+        x:DataType="uvm:PomodoroCelebration"
+        Title="番茄完成"
+        Width="420" Height="240"
+        CanResize="False"
+        WindowDecorations="None"
+        Topmost="True"
+        ShowActivated="False"
+        TransparencyLevelHint="Transparent"
+        Background="Transparent"
+        IsVisible="False"
+        Opacity="0">
+
+  <Window.Resources>
+    <!-- 专注完成 = 番茄暖调；休息结束 = 青绿冷调。两张渐变只喂给头部彩带。 -->
+    <LinearGradientBrush x:Key="WarmHeader" StartPoint="0%,0%" EndPoint="100%,100%">
+      <GradientStop Offset="0" Color="#FFFF8A50"/>
+      <GradientStop Offset="0.55" Color="#FFE5484D"/>
+      <GradientStop Offset="1" Color="#FFC2185B"/>
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="CoolHeader" StartPoint="0%,0%" EndPoint="100%,100%">
+      <GradientStop Offset="0" Color="#FF4DB6AC"/>
+      <GradientStop Offset="0.55" Color="#FF00897B"/>
+      <GradientStop Offset="1" Color="#FF00695C"/>
+    </LinearGradientBrush>
+  </Window.Resources>
+
+  <Window.Styles>
+    <Style Selector="Border.warm">
+      <Setter Property="Background" Value="{StaticResource WarmHeader}"/>
+    </Style>
+    <Style Selector="Border.cool">
+      <Setter Property="Background" Value="{StaticResource CoolHeader}"/>
+    </Style>
+    <Style Selector="Button.chrome">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Foreground" Value="#CCFFFFFF"/>
+      <Setter Property="Padding" Value="6,2"/>
+      <Setter Property="Cursor" Value="Hand"/>
+    </Style>
+    <Style Selector="Button.chrome:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#22FFFFFF"/>
+    </Style>
+  </Window.Styles>
+
+  <Window.Transitions>
+    <Transitions>
+      <DoubleTransition Property="Opacity" Duration="0:0:0.22"/>
+    </Transitions>
+  </Window.Transitions>
+
+  <!-- 整卡可点：点哪儿都能收下（比只留一个 × 更符合"扫一眼就走"） -->
+  <Border x:Name="Card" Margin="12" CornerRadius="18" ClipToBounds="True"
+          RenderTransformOrigin="50%,50%"
+          BoxShadow="0 18 44 0 #40000000"
+          Background="#FFFDFBF9"
+          PointerPressed="OnCardPressed">
+    <Grid RowDefinitions="92,*">
+
+      <!-- 头部彩带：底色 + 装饰圆 + 标题，全在这一行里，正文不可能压上来 -->
+      <Border Grid.Row="0" Classes.warm="{Binding Focus}" Classes.cool="{Binding !Focus}" ClipToBounds="True">
+        <Panel>
+          <Ellipse Width="150" Height="150" Fill="#1FFFFFFF" HorizontalAlignment="Right" VerticalAlignment="Top"
+                   Margin="0,-62,-18,0"/>
+          <Ellipse Width="76" Height="76" Fill="#14FFFFFF" HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                   Margin="-26,0,0,-34"/>
+
+          <Grid ColumnDefinitions="Auto,*,Auto" Margin="18,0,10,0" VerticalAlignment="Center">
+            <Border Grid.Column="0" Width="54" Height="54" CornerRadius="27" Background="#26FFFFFF">
+              <TextBlock Text="{Binding Glyph}" FontSize="25" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <StackPanel Grid.Column="1" Spacing="3" Margin="14,0,8,0" VerticalAlignment="Center">
+              <TextBlock Text="{Binding Title}" FontSize="18.5" FontWeight="SemiBold" Foreground="White"
+                         TextTrimming="CharacterEllipsis"/>
+              <TextBlock Text="{Binding Subtitle}" FontSize="12" Foreground="#E8FFFFFF"
+                         TextTrimming="CharacterEllipsis"/>
+            </StackPanel>
+            <Button Grid.Column="2" Classes.chrome="True" Content="✕" FontSize="12"
+                    VerticalAlignment="Top" Margin="0,4,0,0" Click="OnCloseClick"/>
+          </Grid>
+        </Panel>
+      </Border>
+
+      <!-- 正文：今日战果 + 下一步 -->
+      <StackPanel Grid.Row="1" Spacing="8" Margin="22,15,22,14" VerticalAlignment="Top">
+        <TextBlock Text="{Binding StatsLine}" FontSize="12.5" Foreground="#FF6B6B6B"/>
+        <TextBlock Text="{Binding MarkRow}" FontSize="20"/>
+        <Border Height="1" Background="#14000000" Margin="0,2"/>
+        <TextBlock Text="{Binding NextPhase}" FontSize="11.5" Foreground="#FF9E9E9E"/>
+      </StackPanel>
+    </Grid>
+  </Border>
+</Window>

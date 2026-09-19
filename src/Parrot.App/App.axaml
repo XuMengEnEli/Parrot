@@ -3,7 +3,6 @@
              x:Class="Parrot.App.App"
              xmlns:semi="https://irihi.tech/semi"
              xmlns:vm="clr-namespace:Parrot.UI.ViewModels;assembly=Parrot.UI"
-             xmlns:views="clr-namespace:Parrot.UI.Views;assembly=Parrot.UI"
              RequestedThemeVariant="Default">
   <Application.Styles>
     <semi:SemiTheme Locale="zh-CN" />
@@ -17,21 +16,7 @@
   </Application.Styles>
 
   <Application.DataTemplates>
-    <DataTemplate DataType="{x:Type vm:ReaderPageViewModel}">
-      <views:ReaderPage/>
-    </DataTemplate>
-    <DataTemplate DataType="{x:Type vm:PomodoroPageViewModel}">
-      <views:PomodoroPage/>
-    </DataTemplate>
-    <DataTemplate DataType="{x:Type vm:StudyLogPageViewModel}">
-      <views:StudyLogPage/>
-    </DataTemplate>
-    <DataTemplate DataType="{x:Type vm:ExamPageViewModel}">
-      <views:ExamPage/>
-    </DataTemplate>
-    <DataTemplate DataType="{x:Type vm:SettingsPageViewModel}">
-      <views:SettingsPage/>
-    </DataTemplate>
+    <!-- 导航页不再有 VM→View 模板：五个页面在 MainWindow 里常驻，切页只改 IsVisible -->
 
     <!-- ===== 阅读页·文本视图的版式块模板（需求 1.1 原版式重排 + 1.2 句内发音） ===== -->
 

@@ -4,7 +4,8 @@ namespace Parrot.Core.Abstractions;
 public sealed record ReviewCard(string Word, string Meaning, bool IsWrongAnswer);
 
 /// <summary>
-/// 弹窗卡片来源抽象：WordbookCardSource 两级取词——今日 📌 学习记录优先，当天没记录退回内嵌词典随机。
+/// 弹窗卡片来源抽象：WordbookCardSource 三级取词——记忆曲线今日到期词优先，
+/// 其次今日 📌 学习记录，都没有才退回内嵌词典随机。
 /// </summary>
 public interface ICardSource
 {

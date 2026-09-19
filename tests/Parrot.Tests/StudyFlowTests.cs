@@ -75,7 +75,7 @@ public sealed class StudyFlowTests : IDisposable
     {
         int calls = 0;
         var vm = new SentenceItemViewModel("abandon", "abandon", new StubTts(), new StubPlayer(),
-            _ => calls++);
+            ["abandon"], _ => { calls++; return calls == 1; }); // 桩顶替仓储：首次记入 true，再次撤销 false
         Assert.True(vm.IsRecordable);
         Assert.Equal("📌", vm.RecordGlyph);
         vm.RecordCommand.Execute(null);
@@ -85,7 +85,7 @@ public sealed class StudyFlowTests : IDisposable
         Assert.False(vm.IsRecorded);
         Assert.Equal(2, calls);
 
-        var noLog = new SentenceItemViewModel("x", "x", new StubTts(), new StubPlayer());
+        var noLog = new SentenceItemViewModel("x", "x", new StubTts(), new StubPlayer(), ["x"]);
         Assert.False(noLog.IsRecordable);
     }
 
@@ -95,7 +95,7 @@ public sealed class StudyFlowTests : IDisposable
         _words.AddManual("abandon", "v. 放弃", Today);
         var reader = new ReaderPageViewModel(new StubTts(), new StubPlayer(), restoreRecent: false,
             studyLog: _log, wordbook: _words);
-        reader.RecordWord("abandon ə'bændən v. 放弃", "abandon ə'bændən v. 放弃");
+        reader.RecordSentence("abandon ə'bændən v. 放弃", "abandon ə'bændən v. 放弃");
         var row = Assert.Single(_log.WordsOfDay(Today));
         Assert.Equal("abandon", row.Word);
         Assert.Equal("v. 放弃", row.Meaning);
@@ -104,6 +104,104 @@ public sealed class StudyFlowTests : IDisposable
         // 弹窗词源即刻切换：今天的记录优先
         var card = new WordbookCardSource(_words, _log).NextCard()!;
         Assert.Equal("abandon", card.Word);
+    }
+
+    [Fact]
+    public void ReaderRecord_PhraseRow_LogsEveryMatchedPhrase_NotJustTheFirstWord()
+    {
+        _words.AddManual("put up with", "忍受", Today);
+        _words.AddManual("in accordance with", "按照", Today);
+        var reader = new ReaderPageViewModel(new StubTts(), new StubPlayer(), restoreRecent: false,
+            studyLog: _log, wordbook: _words);
+
+        const string line = "put up with, in accordance with the law";
+        var terms = reader.ComputeRecordTerms(line);
+
+        // 用户选的规则：有短语只记短语，一行里几个短语就记几条，不再退化成 "put"
+        Assert.Equal(["put up with", "in accordance with"], terms);
+        reader.RecordSentence(line, line);
+        var rows = _log.WordsOfDay(Today).ToList();
+        Assert.Equal(terms.OrderBy(x => x, StringComparer.Ordinal), rows.Select(r => r.Word));
+        Assert.Equal("忍受", rows.Single(r => r.Word == "put up with").Meaning); // 各取自己的释义，不是首词的
+        Assert.All(rows, r => Assert.Contains("the law", r.Note)); // 出处仍是整行
+    }
+
+    [Fact]
+    public void ReaderRecord_ExampleSentence_LogsWholeSentence_WithNextLineChineseAsMeaning()
+    {
+        _words.AddManual("in autumn", "在秋天", Today); // 句子里真有词条，也不该把句子切成碎片
+        var reader = new ReaderPageViewModel(new StubTts(), new StubPlayer(), restoreRecent: false,
+            studyLog: _log, wordbook: _words);
+
+        const string sentence = "Leaves change colour in autumn.";
+        Assert.Equal([sentence], reader.ComputeRecordTerms(sentence));
+
+        reader.RecordSentence(sentence, sentence, "树叶在秋天改变颜色。");
+        var row = Assert.Single(_log.WordsOfDay(Today));
+        Assert.Equal(sentence, row.Word);
+        Assert.Equal("树叶在秋天改变颜色。", row.Meaning); // 译文在下一行，由调用方带进来
+    }
+
+    [Fact]
+    public void ReaderRecord_PhraseRowWithoutAnyDictionaryPhrase_FallsBackToSingleWord()
+    {
+        _words.AddManual("put up with", "忍受", Today); // 词库里只有它，本行用不上
+        _words.AddManual("took", "v. 拿，取", Today);
+        var reader = new ReaderPageViewModel(new StubTts(), new StubPlayer(), restoreRecent: false,
+            studyLog: _log, wordbook: _words);
+
+        const string line = "He took the exam yesterday"; // 正文片段：没句末标点，又不是搭配
+        var terms = reader.ComputeRecordTerms(line);
+        reader.RecordSentence(line, line);
+
+        Assert.Equal(["took"], terms); // 代词 he 是虚词，跳过后的第一个实义词
+        Assert.Equal("took", Assert.Single(_log.WordsOfDay(Today)).Word);
+    }
+
+    [Fact]
+    public void ReaderRecord_EntryLine_CollocationMissingFromDictionary_LogsWholePhrase_WithInlineGloss()
+    {
+        // 真实讲义第 3 页的词表行：social pressure / prosocial behavior 这类教材搭配 ECDICT 根本没收录，
+        // 只按词典命中的话会塌回 "social"，整行才是要记的东西
+        var reader = new ReaderPageViewModel(new StubTts(), new StubPlayer(), restoreRecent: false,
+            studyLog: _log, wordbook: _words);
+        const string line = "social pressure 社会压力";
+
+        Assert.Equal(["social pressure"], reader.ComputeRecordTerms(line));
+        reader.RecordSentence(line, line);
+
+        var row = Assert.Single(_log.WordsOfDay(Today));
+        Assert.Equal("social pressure", row.Word);
+        Assert.Equal("社会压力", row.Meaning); // 词库查不到就取同一行的中文注释
+        Assert.Equal(line, row.Note);
+    }
+
+    [Fact]
+    public void ReaderPinFlow_PhrasesRecordAndUnpin_AsOneBatch()
+    {
+        _words.AddManual("put up with", "忍受", Today);
+        _words.AddManual("in accordance with", "按照", Today);
+        var review = new ReviewRepository(_db);
+        var reader = new ReaderPageViewModel(new StubTts(), new StubPlayer(), restoreRecent: false,
+            studyLog: _log, wordbook: _words, review: review);
+        const string line = "put up with, in accordance with the law";
+        var terms = reader.ComputeRecordTerms(line);
+        // 用户选的规则：有短语只记短语，一行里几个短语就记几条，不再退化成 "put"
+        Assert.Equal(["put up with", "in accordance with"], terms);
+        var vm = new SentenceItemViewModel(line, line, new StubTts(), new StubPlayer(),
+            terms, reader.TogglePinned);
+
+        Assert.Contains("put up with · in accordance with", vm.RecordTip); // 点之前就说得清要记哪几条
+        vm.RecordCommand.Execute(null);
+        Assert.True(vm.IsRecorded);
+        Assert.Equal(2, _log.WordsOfDay(Today).Count);
+        Assert.Equal(2, review.Count());
+        Assert.Contains("再点一起移除", vm.RecordTip);
+
+        vm.RecordCommand.Execute(null);
+        Assert.False(vm.IsRecorded);
+        Assert.Empty(_log.WordsOfDay(Today));
+        Assert.Equal(0, review.Count()); // 整批撤销后一起退出复习队列
     }
 
     // ---------- ✍️ 考试 ----------
@@ -164,6 +262,17 @@ public sealed class StudyFlowTests : IDisposable
         _log.Add("abandon", "v. 放弃", "ctx", Today);
         for (int i = 0; i < 30; i++) _words.AddManual($"fill{i}x", "", Today);
         var exam = new ExamPageViewModel(_settings, _log, _words);
+        Assert.Contains(exam.Questions, q => q.Word == "abandon");
+    }
+
+    [Fact]
+    public void Exam_SkipsWholeSentences_RecordedByPin()
+    {
+        // 📌 整句记入的例句不该出现在字母填空里（挖空一整句没有意义），单词记录照常出
+        _log.Add("Leaves change colour in autumn.", "树叶在秋天改变颜色。", "ctx", Today);
+        _log.Add("abandon", "v. 放弃", "ctx", Today);
+        var exam = new ExamPageViewModel(_settings, _log, _words);
+        Assert.DoesNotContain(exam.Questions, q => q.Word.Contains(' '));
         Assert.Contains(exam.Questions, q => q.Word == "abandon");
     }
 }

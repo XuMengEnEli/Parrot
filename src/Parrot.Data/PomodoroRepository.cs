@@ -55,6 +55,43 @@ public sealed class PomodoroRepository(LocalDatabase db)
         return result;
     }
 
+    /// <summary>
+    /// 某月每一天（1 号…月末，缺数据补零）的专注汇总，给统计页的月历：
+    /// 口径与 <see cref="DailyFocus"/> 完全一致（番茄数只算完整专注，分钟算全部 Focus 秒数）。
+    /// </summary>
+    public List<FocusDaySummary> MonthFocus(DateOnly month)
+    {
+        var first = new DateOnly(month.Year, month.Month, 1);
+        int len = DateTime.DaysInMonth(month.Year, month.Month);
+        var result = new List<FocusDaySummary>(len);
+
+        using var conn = db.Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT substr(started_at, 1, 10) AS d, SUM(completed) AS n, SUM(seconds) AS sec
+            FROM pomodoro_log
+            WHERE phase = 'Focus' AND substr(started_at, 1, 10) BETWEEN $from AND $to
+            GROUP BY d
+            """;
+        cmd.Parameters.AddWithValue("$from", first.ToString("yyyy-MM-dd"));
+        cmd.Parameters.AddWithValue("$to", first.AddDays(len - 1).ToString("yyyy-MM-dd"));
+
+        var byDay = new Dictionary<string, (int n, long sec)>();
+        using (var reader = cmd.ExecuteReader())
+        {
+            while (reader.Read())
+                byDay[reader.GetString(0)] = ((int)reader.GetInt64(1), reader.GetInt64(2));
+        }
+
+        for (int i = 0; i < len; i++)
+        {
+            var day = first.AddDays(i);
+            byDay.TryGetValue(day.ToString("yyyy-MM-dd"), out var v);
+            result.Add(new FocusDaySummary(day, v.n, (int)(v.sec / 60)));
+        }
+        return result;
+    }
+
     /// <summary>今日：番茄数只算完整专注；分钟算全部实际专注秒数（含未完成片段）。</summary>
     public (int Sessions, int Minutes) TodayFocus()
     {

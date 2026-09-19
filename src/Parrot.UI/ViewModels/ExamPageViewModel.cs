@@ -4,14 +4,16 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Parrot.Core.Abstractions;
 using Parrot.Core.Exam;
+using Parrot.Core.TextProcessing;
 using Parrot.Data;
 
 namespace Parrot.UI.ViewModels;
 
 /// <summary>
 /// 拼写考试（需求 #3）：随机把单词里几个字母"干掉"，用户回填后一键检查。
-/// 取词优先今日学习记录（📌 列表），不足一轮的词数再从内嵌词库随机补；
-/// 挖空个数在 设置→考试 里配（exam.blanks）。
+/// 取词优先记忆曲线今日到期词（考试即复习），其次今日学习记录（📌 列表），
+/// 不足一轮的词数再从内嵌词库随机补；挖空个数在 设置→考试 里配（exam.blanks）。
+/// 这里同时是记忆曲线唯一的"答错回退"来源：检查后有错的词退回上一档、次日再见。
 /// </summary>
 public sealed partial class ExamPageViewModel : PageViewModelBase
 {
@@ -20,16 +22,18 @@ public sealed partial class ExamPageViewModel : PageViewModelBase
     private readonly SettingsRepository _settings;
     private readonly StudyLogRepository _log;
     private readonly WordbookRepository _wordbook;
+    private readonly ReviewRepository? _review;
     private readonly ITtsService? _tts;
     private readonly IAudioPlayer? _audio;
     private readonly Random _rng = new();
 
     public ExamPageViewModel(SettingsRepository settings, StudyLogRepository log, WordbookRepository wordbook,
-        ITtsService? tts = null, IAudioPlayer? audio = null)
+        ITtsService? tts = null, IAudioPlayer? audio = null, ReviewRepository? review = null)
     {
         _settings = settings;
         _log = log;
         _wordbook = wordbook;
+        _review = review;
         _tts = tts;
         _audio = audio;
         NewRound();
@@ -67,21 +71,37 @@ public sealed partial class ExamPageViewModel : PageViewModelBase
         Questions.Clear();
 
         var today = DateOnly.FromDateTime(DateTime.Now);
-        var pool = _log.RandomOfDay(today, RoundSize)
-            .Select(r => (r.Word, Meaning: r.Meaning))
-            .ToList();
-        if (pool.Count < RoundSize)
+        var pool = new List<(string Word, string Meaning)>();
+        var taken = new HashSet<string>(StringComparer.Ordinal);
+        int fromDue = 0, fromLog = 0, fromBook = 0;
+
+        bool Add(string word, string meaning)
         {
-            // 当天记录不足 → 内嵌词库随机补齐（排除已选）
-            var taken = pool.Select(p => p.Word).ToHashSet(StringComparer.Ordinal);
-            foreach (var w in _wordbook.AllWords(5000).OrderBy(_ => _rng.Next()))
-            {
-                if (pool.Count >= RoundSize) break;
-                if (w.Word.Length < 3 || taken.Contains(w.Word)) continue;
-                pool.Add((w.Word, w.Translation));
-                taken.Add(w.Word);
-            }
+            // 句子（📌 整句记入的例句）不进考卷：字母填空只对单词成立
+            if (pool.Count >= RoundSize || word.Length < 3 || PhraseMatcher.IsSentence(word) || !taken.Add(word))
+                return false;
+            pool.Add((word, meaning));
+            return true;
         }
+
+        // 1) 今日到期的复习词优先——考试即复习，答错还能把曲线往回压一档
+        if (_review is not null)
+            foreach (var r in _review.DueQueue(today).OrderBy(_ => _rng.Next()))
+                if (Add(r.Word, r.Meaning)) fromDue++;
+
+        // 2) 当日学习记录（刚钉住的新词，第二天才进复习队列，当天靠这里补上）
+        foreach (var r in _log.RandomOfDay(today, RoundSize))
+            if (Add(r.Word, r.Meaning)) fromLog++;
+
+        // 3) 还不够 → 内嵌词库随机补齐（5000 行查询，够一轮就不查）
+        if (pool.Count < RoundSize)
+            foreach (var w in _wordbook.AllWords(5000).OrderBy(_ => _rng.Next()))
+                if (Add(w.Word, w.Translation)) fromBook++;
+
+        string source = fromDue > 0 ? " · 词源：今日到期复习优先"
+            : fromLog > 0 ? " · 词源：今日学习记录优先"
+            : fromBook > 0 ? " · 词源：词库随机"
+            : "";
 
         IsPoolEmpty = pool.Count == 0;
         EmptyHint = IsPoolEmpty
@@ -92,19 +112,21 @@ public sealed partial class ExamPageViewModel : PageViewModelBase
 
         SubTitle = pool.Count == 0
             ? "词库为空"
-            : $"本轮 {pool.Count} 题 · 每题挖 {_settings.ExamBlanks} 个字母 · 词源：今日学习记录优先";
+            : $"本轮 {pool.Count} 题 · 每题挖 {_settings.ExamBlanks} 个字母{source}";
     }
 
-    /// <summary>检查：逐空核对，题与卷都出分。</summary>
+    /// <summary>检查：逐空核对，题与卷都出分；答错的词顺带把记忆曲线退回一档（次日再见）。</summary>
     [RelayCommand]
     private void CheckAll()
     {
         if (Questions.Count == 0) return;
         int right = 0, blanks = 0;
+        var today = DateOnly.FromDateTime(DateTime.Now);
         foreach (var q in Questions)
         {
             q.Check();
             if (q.AllCorrect) right++;
+            else _review?.MarkLapse(q.Word, today); // 曲线唯一的回退入口，无需用户额外评分
             blanks += q.Blanks.Count;
         }
         Checked = true;
@@ -197,6 +219,9 @@ public sealed class ExamSegmentViewModel
     public bool IsLetter { get; }
     public bool IsBlank => !IsLetter;
     public char Ch { get; }
+
+    /// <summary>短语题里词与词之间的空格格要留出真正的词距（逐格排版下 1 个空格字符几乎看不见）。</summary>
+    public double SegmentWidth => Ch == ' ' ? 16 : 0;
     public ExamBlankViewModel? Blank { get; }
     public char Answer { get; }
 }

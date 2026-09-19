@@ -125,11 +125,33 @@ public sealed class ReaderOcrOrchestrationTests : IDisposable
         {
             Assert.Equal(2, card.Overlays.Count);
             Assert.Equal("Unit Test Heading", card.Overlays[0].Audio.Speak);
-            Assert.Equal("English sentence here", card.Overlays[1].Audio.Speak); // 尾点被 TrimSpeak 剥掉
+            Assert.Equal("English sentence here.", card.Overlays[1].Audio.Speak); // 句末标点保留（📌 用它认出整句）
             // 页高补偿后坐标必须落在位图内（标题行贴页顶）
             Assert.True(card.Overlays[0].X > 0 && card.Overlays[0].Y is > 0 and < 200,
                 $"热点应在页内，实际 X={card.Overlays[0].X} Y={card.Overlays[0].Y}");
         }
+    }
+
+    [Fact]
+    public async Task Ocr_Completion_Notice_Clears_Itself_After_A_While()
+    {
+        File.WriteAllBytes(_pdfPath, BlankPdf(2));
+        var ocr = new StubOcr();
+        var vm = new ReaderPageViewModel(new StubTts(), new StubPlayer(), ocr, restoreRecent: false);
+        vm.SelectedDocument = new PdfDocumentSource(_pdfPath);
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        while (sw.ElapsedMilliseconds < 20_000 && !(vm.ScanHint?.Contains("完成") ?? false))
+            await Task.Delay(50);
+        Assert.NotNull(vm.ScanHint); // 完成通知先亮出来
+        long shownAt = sw.ElapsedMilliseconds;
+
+        while (sw.ElapsedMilliseconds < shownAt + 15_000 && vm.ScanHint is not null)
+            await Task.Delay(100);
+        long held = sw.ElapsedMilliseconds - shownAt;
+        Assert.Null(vm.ScanHint);                    // 到点自己收起，不长期占着阅读区
+        Assert.InRange(held, 3_000, 12_000);         // 是"停几秒"，不是闪一下也不是常驻
+        Assert.Equal(2, ocr.Calls);                  // 收起与识别结果无关，两页都跑过了
     }
 
     [Fact]

@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using Parrot.Core.TextProcessing;
 
 namespace Parrot.Data;
 
@@ -157,6 +158,37 @@ public sealed class WordbookRepository(LocalDatabase db)
         cmd.Parameters.AddWithValue("$w", word.Trim().ToLowerInvariant());
         using var r = cmd.ExecuteReader();
         return r.Read() ? Map(r) : null;
+    }
+
+    /// <summary>
+    /// 一句英文里命中的词典短语（最长优先、互不重叠，按出现顺序）。
+    /// 整句候选一次批量查（ECDICT 有 36 万条多词条目，逐候选查库会把一句拖成几十次往返）。
+    /// </summary>
+    public List<string> MatchPhrases(string text)
+    {
+        var tokens = PhraseMatcher.Tokenize(text);
+        if (tokens.Count < PhraseMatcher.MinWords) return [];
+        var candidates = PhraseMatcher.Candidates(tokens);
+        if (candidates.Count == 0) return [];
+
+        var inDictionary = new HashSet<string>(StringComparer.Ordinal);
+        using var conn = db.Open();
+        foreach (var chunk in candidates.Chunk(200))
+        {
+            using var cmd = conn.CreateCommand();
+            var names = chunk.Select((_, i) => $"$c{i}").ToArray();
+            // 只认"有真释义"的条目：ECDICT 的 36 万条短语里约 2.9 万条是网页抓取凑数的专名与自由组合
+            // （"colour in → [网络] 颜色"），命中这种碎片会把整句切成无意义的两三个词。
+            cmd.CommandText = $"""
+                SELECT word FROM words
+                WHERE word IN ({string.Join(",", names)})
+                  AND trim(transl) <> '' AND transl NOT LIKE '[网络]%'
+                """;
+            for (int i = 0; i < chunk.Length; i++) cmd.Parameters.AddWithValue(names[i], chunk[i]);
+            using var r = cmd.ExecuteReader();
+            while (r.Read()) inDictionary.Add(r.GetString(0));
+        }
+        return inDictionary.Count == 0 ? [] : PhraseMatcher.Find(tokens, inDictionary.Contains);
     }
 
     public int Count()

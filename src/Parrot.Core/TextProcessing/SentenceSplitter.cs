@@ -71,6 +71,11 @@ public static class SentenceSplitter
     // 撇号（' 与 ’）不剔：它是缩写的一部分，剔了会把 "It's" 念成 "It s"；句界引号交给 OverlayLayout.TrimSpeak
     private static readonly Regex FullWidthPunct = new(@"[。！？；，、：""（）【】《》…—－]", RegexOptions.Compiled);
 
+    // 全角句末标点先换成半角再删其余：📌 靠句末标点认出"这一条是完整句子"，
+    // 而 OCR（Vision）把英文句尾的 "?" "." 常识别成 "？" "．"（讲义第 3 页实测）
+    // 只认字母后面那个：中文译文自带的 "。" 换成立在句尾的半角点是假句界
+    private static readonly Regex FullWidthEnderAfterLetter = new(@"(?<=[A-Za-z])[。！？．]", RegexOptions.Compiled);
+
     // 词条行的词性标记（n. / adj. / vt. …）：OCR 常把它们和音标、频次混在一行，念出来是噪音
     private static readonly Regex PosToken = new(
         @"\b(adj|adv|afix|abbr|aux|conj|interj|prep|pron|v|vt|vi|num|n)\b\.?",
@@ -102,6 +107,12 @@ public static class SentenceSplitter
         if (string.IsNullOrEmpty(text)) return null;
         var t = PhoneticSpan.Replace(text, " ");
         t = PhoneticResidue.Replace(t, " "); // 再扫一遍：残片（"ikri:s］"）不带配对括号，上面那条抓不到
+        t = FullWidthEnderAfterLetter.Replace(t, m => m.Value switch
+        {
+            "。" or "．" => ".",
+            "！" => "!",
+            _ => "?",
+        }); // 中文后面的 "。" 不在此列：那是译文句点，交给下面整块剔除
         t = FullWidthPunct.Replace(t, " ");
         t = Regex.Replace(t, @"[\p{Sm}\p{So}]+", " "); // ☆★◆※ 等装饰符号不进 TTS
         t = CjkBlock.Replace(t, " ");

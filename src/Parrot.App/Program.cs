@@ -1,6 +1,10 @@
 using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Media.Imaging;
 using Parrot.Core;
 using Parrot.Data;
+using Parrot.UI.ViewModels;
+using Parrot.UI.Views;
 
 namespace Parrot.App;
 
@@ -39,6 +43,17 @@ internal static class Program
             UseConsole();
             RunOcr(args[idx + 1], idx + 2 < args.Length && int.TryParse(args[idx + 2], out int pg) ? pg : 1,
                 args.Contains("--lines"));
+            return;
+        }
+
+        // 工具模式：--shot <png> [页签] [库文件] [页面] —— 把某一页离屏渲染成图片（本机无法点击/截屏时验收 UI）
+        idx = Array.IndexOf(args, "--shot");
+        if (idx >= 0 && idx + 1 < args.Length)
+        {
+            UseConsole();
+            RunShot(args[idx + 1], idx + 2 < args.Length && int.TryParse(args[idx + 2], out int t) ? t : 0,
+                idx + 3 < args.Length ? args[idx + 3] : null,
+                idx + 4 < args.Length ? args[idx + 4] : "studylog");
             return;
         }
 
@@ -135,8 +150,86 @@ internal static class Program
         int shown = 0;
         foreach (var s in spots)
         {
-            Console.WriteLine($"  🔊 (x={s.RightPt:F0}pt y={s.MidYPt:F0}pt) {Short(s.Speak)}");
+            Console.WriteLine($"  🔊 (x={s.RightPt:F0}pt y={s.MidYPt:F0}pt) {Short(s.Speak)}"
+                + (Core.TextProcessing.PhraseMatcher.IsSentence(s.Speak) ? " [整句]" : "")
+                + (s.Gloss is null ? "" : $" [释义] {Short(s.Gloss)}"));
             if (++shown >= (dumpLines ? 999 : 15)) break;
+        }
+    }
+
+    /// <summary>
+    /// 离屏渲染某一页成图片：SetupWithoutStarting 只装载 App 的样式与模板，不建主窗也不挂托盘；
+    /// 默认吃本机真库（可传库文件路径看造出来的状态），所以图上排的就是真实数据。
+    /// page 可选 studylog（默认，📌 学习 / 🔁 复习 两页签）· pomodoro（计时 / 统计 / 专注日历）· celebrate（到点庆祝卡）。
+    /// </summary>
+    private static void RunShot(string outPath, int tab, string? dbPath, string page)
+    {
+        _ = AppBuilder.Configure<App>().UsePlatformDetect().WithInterFont().SetupWithoutStarting();
+
+        var db = new LocalDatabase(string.IsNullOrEmpty(dbPath) ? null : dbPath);
+        db.EnsureSchema();
+
+        Window win;
+        StudyLogPageViewModel? logVm = null;
+        if (page == "celebrate")
+        {
+            // 庆祝卡自带尺寸（420×268），直接渲染它自己；文案用一组有代表性的真值。
+            // 页签参数在这里当"哪一张卡"用：1 = 休息结束（冷色），其余 = 番茄完成（暖色）。
+            var card = new CelebrationWindow();
+            card.ShowCard(tab != 1
+                ? new PomodoroCelebration("🎉", "第 6 个番茄完成", "起来活动一下，喝口水",
+                    "今日 6 个番茄 · 专注 150 分钟", "🍅🍅🍅", "接下来短休息，让眼睛歇会儿", Focus: true)
+                : new PomodoroCelebration("☕", "休息结束", "电充好了，回到书桌前",
+                    "今日 6 个番茄 · 专注 150 分钟", "🍅🍅🍅🍅🍅🍅", "下一个专注已经在计时了", Focus: false));
+            win = card;
+        }
+        else if (page == "pomodoro")
+        {
+            var pomodoro = new PomodoroPage { DataContext = new PomodoroPageViewModel(new PomodoroRepository(db)) };
+            win = new Window
+            {
+                Content = pomodoro,
+                Width = 1080,
+                Height = 728,
+                WindowStartupLocation = WindowStartupLocation.Manual,
+            };
+            pomodoro.FindControl<TabControl>("Tabs")?.SelectedIndex = tab;
+        }
+        else
+        {
+            logVm = new StudyLogPageViewModel(new StudyLogRepository(db),
+                review: new ReviewRepository(db)) { SelectedTab = tab };
+            win = new Window
+            {
+                Content = new StudyLogPage { DataContext = logVm },
+                Width = 1080,
+                Height = 728,
+                WindowStartupLocation = WindowStartupLocation.Manual,
+            };
+        }
+        if (page != "celebrate") win.Show(); // 庆祝卡由 ShowCard 自己首次弹出，走的是应用里同一条路径
+        Pump(1500); // 样式、字体与布局得走完一帧才有可渲染内容
+
+        // 庆祝卡必须 1x 出图：无边框透明窗画进 192dpi 的 RTB 时字会翻倍（布局没错，只有文字放大），
+        // 420×268 本身够小，1x 也看得清。
+        double scale = page == "celebrate" ? 1 : 2;
+        var rtb = new RenderTargetBitmap(
+            new PixelSize((int)(win.Width * scale), (int)(win.Height * scale)),
+            new Vector(96 * scale, 96 * scale));
+        rtb.Render(win);
+        using (var fs = File.Create(outPath)) rtb.Save(fs, new PngBitmapEncoderOptions());
+        Console.WriteLine($"已渲染 {outPath}：{page} 页签 {tab}" +
+            (logVm is null ? "" : $" · 日期 {logVm.Days.Count} 组 / 今日复习 {logVm.TodayDue.Count} 个 / 排期 {logVm.Agenda.Count} 天"));
+        win.Close();
+    }
+
+    private static void Pump(int ms)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        while (sw.ElapsedMilliseconds < ms)
+        {
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+            Thread.Sleep(15);
         }
     }
 

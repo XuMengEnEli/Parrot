@@ -64,6 +64,7 @@
                             <!-- 可见字母 -->
                             <TextBlock Text="{Binding Ch}" FontFamily="Consolas,Menlo,monospace" FontSize="24"
                                        FontWeight="SemiBold" VerticalAlignment="Center" Margin="1.5,0"
+                                       MinWidth="{Binding SegmentWidth}"
                                        IsVisible="{Binding IsLetter}"/>
                             <!-- 填空格：单字符输入 + 三态（待填灰/对绿/错红），错后露答案 -->
                             <StackPanel Spacing="2" VerticalAlignment="Center" Margin="2,0"

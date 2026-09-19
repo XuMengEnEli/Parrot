@@ -89,7 +89,7 @@
           <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
             <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
               <TextBlock Classes="rowTitle" Text="定时弹出复习卡"/>
-              <Border Classes="help" ToolTip.Tip="伪装成右下角小广告，实为复习卡：优先抽今日 📌 学习记录里的词，当天没记录则从内嵌词典随机抽。无焦点、不打断输入，45 秒自动收起，可拖拽。">
+              <Border Classes="help" ToolTip.Tip="伪装成右下角小广告，实为复习卡：优先抽记忆曲线今日到期的词，其次今日 📌 学习记录，都没有则从内嵌词典随机抽。无焦点、不打断输入，45 秒自动收起，可拖拽。">
                 <TextBlock Text="?"/>
               </Border>
             </StackPanel>
@@ -156,7 +156,7 @@
           <Grid ColumnDefinitions="*,Auto">
             <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
               <TextBlock Classes="rowTitle" Text="每词挖空字母数"/>
-              <Border Classes="help" ToolTip.Tip="考试随机把单词里几个字母遮成空格让你回填。至少保留 2 个字母可见，所以太短的词会自动少挖几个。取词优先来自「学习记录」里今天的 📌。">
+              <Border Classes="help" ToolTip.Tip="考试随机把单词里几个字母遮成空格让你回填。至少保留 2 个字母可见，所以太短的词会自动少挖几个。取词优先来自「每日复习」里今天到期的词，其次今天的 📌；答错的词会在记忆曲线上退一档、次日再见。">
                 <TextBlock Text="?"/>
               </Border>
             </StackPanel>
