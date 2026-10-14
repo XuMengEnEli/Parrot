@@ -48,15 +48,6 @@ public sealed class ReviewRepository(LocalDatabase db)
         return Read(conn, cmd);
     }
 
-    public int CountDue(DateOnly today)
-    {
-        using var conn = db.Open();
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT COUNT(*) FROM review_state WHERE due <= $d";
-        cmd.Parameters.AddWithValue("$d", Fmt(today));
-        return Convert.ToInt32(cmd.ExecuteScalar());
-    }
-
     /// <summary>今日之后的排期（复习日历）：按到期日聚合成"哪天有多少词要见"。</summary>
     public List<ReviewAgenda> Agenda(DateOnly today)
     {

@@ -46,11 +46,13 @@ public sealed class TtsCache
         File.Move(tmp, targetPath, overwrite: true);
     }
 
-    /// <summary>超过 MaxBytes 时按最后访问时间从旧到新删除。</summary>
+    /// <summary>超过 MaxBytes 时按最后访问时间从旧到新删除（含播放预热的 *.warm.wav / *.48.wav）。</summary>
     public void TrimToCapacity()
     {
-        var entries = new DirectoryInfo(Directory)
-            .EnumerateFiles("*.mp3")
+        var root = new DirectoryInfo(Directory);
+        var entries = root.EnumerateFiles("*.mp3")
+            .Concat(root.EnumerateFiles("*.warm.wav"))
+            .Concat(root.EnumerateFiles("*.48.wav"))
             .Select(f => (File: f, LastAccess: f.LastAccessTimeUtc))
             .ToList();
         long total = entries.Sum(e => e.File.Length);

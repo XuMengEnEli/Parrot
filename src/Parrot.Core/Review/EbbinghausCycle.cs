@@ -15,9 +15,6 @@ public static class EbbinghausCycle
     /// <summary>走完 6 档后的长期间隔（天）。</summary>
     public const int LongTermIntervalDays = 60;
 
-    /// <summary>总共几档会走到长期节奏。</summary>
-    public static int PhaseCount => Intervals.Length;
-
     /// <summary>已回访 <paramref name="visits"/> 次的词，下次之间隔多少天。</summary>
     public static int GapDays(int visits)
         => visits < 0 ? Intervals[0]

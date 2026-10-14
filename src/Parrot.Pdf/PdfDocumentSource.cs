@@ -239,13 +239,42 @@ public sealed class PdfDocumentSource : IDisposable
         foreach (var band in bands.OrderByDescending(b => b[0].Top))
         {
             var o = band.OrderBy(b => b.Left).ToList();
+            double fs = Median(o.Select(x => x.Size));
             yield return new Core.TextProcessing.PdfLine(
                 string.Join(' ', o.Select(x => x.Text)),
                 o[0].Left, o[^1].Right,
                 o.Max(x => x.Top), o.Min(x => x.Bottom),
-                Median(o.Select(x => x.Size)),
-                o.Count(x => x.Bold) * 2 > o.Count);
+                fs,
+                o.Count(x => x.Bold) * 2 > o.Count,
+                SplitRuns(o, fs),
+                o.Select(w => new Core.TextProcessing.PdfWord(w.Text, w.Left, w.Right, w.Top, w.Bottom)).ToList());
         }
+    }
+
+    /// <summary>
+    /// 行内按横向间隙切跑段：正常词间隙 ≈ 字号的小零头，跨列的表格槽远大于此
+    /// （中策词讲义实测：词间隙 ≤6pt，列槽 24~87pt）。阈值取 max(10pt, 1.5×字号)。
+    /// 只影响发音锚点（PdfLine.Runs），整行 Text/L/R 原样保留。
+    /// </summary>
+    private static List<Core.TextProcessing.PdfRun> SplitRuns(List<WordBox> o, double fontSize)
+    {
+        double gapLimit = Math.Max(10, fontSize * 1.5);
+        var runs = new List<Core.TextProcessing.PdfRun>();
+        var texts = new List<string> { o[0].Text };
+        double left = o[0].Left, right = o[0].Right;
+        foreach (var w in o.Skip(1))
+        {
+            if (w.Left - right > gapLimit)
+            {
+                runs.Add(new(string.Join(' ', texts), left, right));
+                texts = [w.Text];
+                left = w.Left;
+            }
+            else texts.Add(w.Text);
+            right = w.Right;
+        }
+        runs.Add(new(string.Join(' ', texts), left, right));
+        return runs;
     }
 
     private static double Median(IEnumerable<double> xs)

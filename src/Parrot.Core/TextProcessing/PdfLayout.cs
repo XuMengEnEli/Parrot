@@ -3,9 +3,22 @@ using System.Text.RegularExpressions;
 namespace Parrot.Core.TextProcessing;
 
 /// <summary>由 PDF 坐标重建出的一行（字体单位 pt；Top/Bottom 为 PDF 坐标系，Top 大 = 视觉靠上）。</summary>
+/// <param name="Runs">行内横向跑段：表格版式里"词条列+释义列"同视觉行会并成一行，
+/// 发音锚点要用首段（词条本身）的词尾而非整行右缘；Text/L/R 仍是整行（文本视图/遮挡边界不受影响）。</param>
 public sealed record PdfLine(
     string Text, double Left, double Right, double Top, double Bottom,
-    double FontSize, bool Bold);
+    double FontSize, bool Bold,
+    IReadOnlyList<PdfRun>? Runs = null,
+    IReadOnlyList<PdfWord>? Words = null);
+
+/// <summary>行内一段连续词（横向间隙明显小于列间距才算同段）。</summary>
+public sealed record PdfRun(string Text, double Left, double Right);
+
+/// <summary>行内词框（词级几何；仅文本层页有，OCR 页只有行框）。</summary>
+public sealed record PdfWord(string Text, double Left, double Right, double Top, double Bottom);
+
+/// <summary>遮挡悬停的"整行"框：一行在罩层覆盖区内的范围（Text=该范围文字，左缘已裁到罩层边界）。</summary>
+public sealed record PdfRowBox(string Text, double Left, double Right, double Top, double Bottom);
 
 public enum PdfBlockKind { Heading, Paragraph, ListItem, Entry, ScannedPage }
 

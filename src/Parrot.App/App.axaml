@@ -52,14 +52,26 @@
                 Command="{Binding Audio.SpeakCommand}"/>
         <Button Content="{Binding Audio.RecordGlyph}" Padding="6,2" VerticalAlignment="Top"
                 ToolTip.Tip="{Binding Audio.RecordTip}"
-                IsVisible="{Binding Audio.IsRecordable}"
+                IsVisible="{Binding Audio, Converter={x:Static ObjectConverters.IsNotNull}}"
                 Command="{Binding Audio.RecordCommand}"/>
       </StackPanel>
     </DataTemplate>
 
     <DataTemplate DataType="{x:Type vm:EntryViewModel}" x:DataType="vm:EntryViewModel">
-      <Grid ColumnDefinitions="*,Auto" Margin="0,1.5">
-        <TextBlock Grid.Column="0" Text="{Binding Text}" TextWrapping="Wrap"/>
+      <Grid ColumnDefinitions="*,Auto" Margin="0,1.5"
+            PointerEntered="EntryGrid_PointerEntered" PointerExited="EntryGrid_PointerExited">
+        <!-- 遮挡模式：只留主词 + 两条灰条示意"释义被盖住"；悬停整行原样露出，移开盖回 -->
+        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Top">
+          <TextBlock Text="{Binding Text}" TextWrapping="Wrap" IsVisible="{Binding !Masked}"/>
+          <TextBlock Text="{Binding Text}" TextWrapping="Wrap" IsVisible="{Binding Revealed}"/>
+          <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding BarsVisible}">
+            <TextBlock Text="{Binding Headword}" FontWeight="SemiBold"/>
+            <StackPanel Spacing="4" VerticalAlignment="Center">
+              <Border Width="170" Height="10" CornerRadius="3" Background="#2E808080"/>
+              <Border Width="118" Height="10" CornerRadius="3" Background="#2E808080"/>
+            </StackPanel>
+          </StackPanel>
+        </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Top" Margin="6,0,0,0">
           <Button Content="🔊" Padding="8,2"
                   ToolTip.Tip="{Binding Audio.Error}"

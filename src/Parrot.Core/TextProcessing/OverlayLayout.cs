@@ -12,12 +12,14 @@ public sealed record SpeakSpot(double RightPt, double MidYPt, string Speak, stri
 /// </summary>
 public static class OverlayLayout
 {
-    public static List<SpeakSpot> BuildSpots(IReadOnlyList<PdfLine> lines)
+    /// <param name="pageHeightPt">页高 pt；&gt;0 时视觉 6%~94% 之外的行（页眉书名/页码）不产热点。</param>
+    public static List<SpeakSpot> BuildSpots(IReadOnlyList<PdfLine> lines, double pageHeightPt = 0)
     {
         var spots = new List<SpeakSpot>();
         if (lines.Count == 0) return spots;
 
         double body = LayoutBuilder.BodyFontSize(lines);
+        double topKeep = pageHeightPt * 0.94, bottomKeep = pageHeightPt * 0.06;
         var para = new List<PdfLine>();
 
         void FlushPara()
@@ -29,6 +31,15 @@ public static class OverlayLayout
 
         foreach (var ln in lines)
         {
+            // 页眉书名/页码行不产热点（不用翻译发音）
+            if (pageHeightPt > 0 && (ln.Top > topKeep || ln.Top < bottomKeep)) continue;
+            // Unit 小标题（"Unit 1"开头）不产热点——不用翻译（用户要求）；OCR 页它字号只 ~1.3× 正文，
+            // 过不了大标题阈值，按文本精确匹配。要求 Unit 后跟数字，"unit n. 单元"这类词条行不受影响
+            if (IsUnitTitle(ln.Text))
+            {
+                FlushPara();
+                continue;
+            }
             // 中文译文行/符号行不产热点：EnglishOnly 会从这类行里剥出零星拉丁 token（"2010 iPad"），念出来是垃圾
             if (!LayoutBuilder.FirstIsLatinish(ln.Text) && !LayoutBuilder.StartsBullet(ln.Text))
             {
@@ -41,11 +52,22 @@ public static class OverlayLayout
             var kind = LayoutBuilder.Classify(ln, body);
             if (kind != PdfBlockKind.Paragraph)
             {
-                // 标题/词条/列表行：单行即一个发音单元，直接锚在行尾
+                if (kind == PdfBlockKind.Heading && ln.FontSize >= body * 1.6)
+                {
+                    // Unit 标题/跨栏大标题（真书里 2.8× 正文起）不挂按钮——不用翻译（用户要求）；
+                    // 正文级的 Heading 行（field n. 这类词头残行 1.2×、测试夹具 1.6× 以下）是词条，照旧要发音。
+                    // 但要断开段落，别把标题前后并进同段
+                    FlushPara();
+                    continue;
+                }
+                // 标题/词条/列表行：单行即一个发音单元，直接锚在行尾。
+                // 表格版式（中策词讲义）会把同视觉行的词条列+释义列并成一行，
+                // 整行右缘落在释义中间——锚点与发音文本都取首跑段（词条本身）。
                 FlushPara();
-                var sp = SentenceSplitter.EnglishOnly(ln.Text);
+                var run = ln.Runs is { Count: > 0 } first ? first[0] : null;
+                var sp = SentenceSplitter.EnglishOnly(run?.Text ?? ln.Text);
                 if (sp is not null)
-                    spots.Add(new SpeakSpot(ln.Right, (ln.Top + ln.Bottom) / 2, TrimSpeak(sp)));
+                    spots.Add(new SpeakSpot(run?.Right ?? ln.Right, (ln.Top + ln.Bottom) / 2, TrimSpeak(sp)));
                 continue;
             }
             if (para.Count > 0 && LayoutBuilder.BreaksParagraph(para[^1], ln, body))
@@ -65,6 +87,18 @@ public static class OverlayLayout
         var t = text.Trim();
         if (t.Length == 0 || t[0] is '【' or '〖') return false;
         return LayoutBuilder.HasCjk(t);
+    }
+
+    /// <summary>"Unit 1"/"Unit3" 开头的单元小标题（用户要求不翻译不挂按钮）；
+    /// 必须数字紧跟 Unit 后，"unit n. 单元"这类词条行不匹配。
+    /// 行首还得跳过私用区字符——中策 PDF 的 ● 项目符号在文本层是 U+F06C 这类 PUA 码点。</summary>
+    internal static bool IsUnitTitle(string text)
+    {
+        var s = new string(text.SkipWhile(c =>
+            c is ' ' or '●' or '·' or '•' or '\t' or (>= '\uE000' and <= '\uF8FF')).ToArray());
+        if (!s.StartsWith("Unit", StringComparison.Ordinal)) return false;
+        var rest = s[4..].TrimStart(' ', '.');
+        return rest.Length > 0 && char.IsAsciiDigit(rest[0]);
     }
 
     private static string JoinGloss(string? existing, string addition)

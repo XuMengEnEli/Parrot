@@ -204,6 +204,72 @@ public sealed class StudyFlowTests : IDisposable
         Assert.Equal(0, review.Count()); // 整批撤销后一起退出复习队列
     }
 
+    // ---------- ＋ 手动记词 ----------
+
+    [Fact]
+    public void ManualAdd_WordWithDictionaryMeaning_LogsAndSchedulesReview()
+    {
+        _words.AddManual("abandon", "v. 放弃", Today);
+        var review = new ReviewRepository(_db);
+        var vm = new StudyLogPageViewModel(_log, review: review, wordbook: _words);
+
+        vm.OpenManualInputCommand.Execute(null);
+        vm.ManualInput = "Abandon"; // 大小写差异由 TermKey 归一化
+        vm.ConfirmManualInputCommand.Execute(null);
+
+        var row = Assert.Single(_log.WordsOfDay(Today));
+        Assert.Equal("abandon", row.Word);
+        Assert.Equal("v. 放弃", row.Meaning); // 词典释义自动带上
+        Assert.Equal(1, review.Count());      // 与 📌 同口径：记入即起锚，首访 1 天后
+        Assert.Equal(1, vm.TodayCount);
+        Assert.True(vm.ManualInputOpen);      // 连续录入：输入区保持展开
+        Assert.Equal("", vm.ManualInput);      // 成功后输入框清空
+    }
+
+    [Fact]
+    public void ManualAdd_PhraseWithSpaces_StaysWhole_SplitOnPunctuation()
+    {
+        var vm = new StudyLogPageViewModel(_log, wordbook: _words);
+        vm.OpenManualInputCommand.Execute(null);
+        vm.ManualInput = "put up with，social pressure;  cat\n"; // 空格不当分隔符，标点/换行都认
+        vm.ConfirmManualInputCommand.Execute(null);
+
+        var words = _log.WordsOfDay(Today).Select(w => w.Word).OrderBy(x => x).ToArray();
+        Assert.Equal(["cat", "put up with", "social pressure"], words);
+    }
+
+    [Fact]
+    public void ManualAdd_DuplicateWord_SkippedWithFeedback_NotCountedAgain()
+    {
+        _log.Add("cat", "n. 猫", "ctx", Today); // 已在今日列表
+        var review = new ReviewRepository(_db);
+        review.ScheduleFirst("cat", Today.AddDays(-1)); // 老词已有曲线
+        var vm = new StudyLogPageViewModel(_log, review: review, wordbook: _words);
+
+        vm.OpenManualInputCommand.Execute(null);
+        vm.ManualInput = "cat, dog";
+        vm.ConfirmManualInputCommand.Execute(null);
+
+        Assert.Equal(2, vm.TodayCount);          // dog 新增、cat 去重
+        Assert.False(vm.ManualFeedbackError);    // 部分成功不算错误
+        Assert.Contains("cat", vm.ManualFeedback); // 跳过项在反馈里点名
+        Assert.Equal(2, review.Count());         // cat 老曲线不重置（幂等）+ dog 新增建档
+    }
+
+    [Fact]
+    public void ManualAdd_BlankInput_ShowsErrorWithoutWriting()
+    {
+        var vm = new StudyLogPageViewModel(_log);
+        vm.OpenManualInputCommand.Execute(null);
+        vm.ManualInput = "  ，，";
+        vm.ConfirmManualInputCommand.Execute(null);
+
+        Assert.True(vm.ManualFeedbackError);
+        Assert.Equal("先输入至少一个单词", vm.ManualFeedback);
+        Assert.Empty(_log.WordsOfDay(Today));
+        Assert.True(vm.ManualInputOpen); // 输入区不收起，等用户改
+    }
+
     // ---------- ✍️ 考试 ----------
 
     [Fact]

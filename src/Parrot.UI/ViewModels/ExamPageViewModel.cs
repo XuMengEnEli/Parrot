@@ -170,8 +170,6 @@ public sealed partial class ExamQuestionViewModel : ObservableObject
     /// <summary>题面渲染序列：字母段与空段交替（XAML 按类型选模板）。</summary>
     public IReadOnlyList<ExamSegmentViewModel> Segments { get; }
 
-    public string Rendered => ExamQuizer.Render(Slots);
-
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StateText))]
     [NotifyPropertyChangedFor(nameof(AllCorrect))]

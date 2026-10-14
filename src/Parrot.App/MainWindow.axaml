@@ -52,5 +52,8 @@
       <uiv:ExamPage DataContext="{Binding Exam}" IsVisible="{Binding IsSelected}"/>
       <uiv:SettingsPage DataContext="{Binding Settings}" IsVisible="{Binding IsSelected}"/>
     </Panel>
+
+  <!-- 护眼遮罩：半透明豆沙绿蒙在整窗最上层压低亮度；IsHitTestVisible=False，点击/滚动/文本选择全部穿透 -->
+  <Border Grid.ColumnSpan="2" IsHitTestVisible="False" Background="#59C7EDCC"/>
   </Grid>
 </Window>

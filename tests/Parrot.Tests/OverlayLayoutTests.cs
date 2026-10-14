@@ -35,19 +35,48 @@ public class OverlayLayoutTests
     }
 
     [Fact]
-    public void Heading_And_Entry_Lines_Get_The_Own_Spot_At_Line_End()
+    public void Heading_Lines_Get_No_Spot_Entry_Lines_Do()
     {
+        // Unit 小标题不用翻译（用户要求）：大字号 Heading 不再产按钮，词条行照旧
         var lines = new List<PdfLine>
         {
-            new("Unit 12", 60, 150, 760, 740, 20, false),        // 大字号 → Heading
+            new("Unit 12", 60, 150, 760, 740, 20, false),         // 大字号 → Heading：不产热点
             new("abandon v. 放弃", 60, 220, 700, 688, 11, false), // 英中混排行首英文 → Entry
         };
-        var spots = OverlayLayout.BuildSpots(lines);
+        var spot = Assert.Single(OverlayLayout.BuildSpots(lines));
+        Assert.StartsWith("abandon", spot.Speak);
+        Assert.Equal(220, spot.RightPt);
+    }
+
+    [Fact]
+    public void Header_And_PageNumber_Lines_Produce_No_Spots()
+    {
+        // 页眉书名/页码不产热点（不用翻译发音，用户要求）；不传页高时不过滤（调试 dump 仍能看全量）
+        var lines = new List<PdfLine>
+        {
+            new("MBA大师英语词汇", 60, 200, 810, 796, 11, false), // 页眉（视觉最顶）：y-up 810 > 842×0.94
+            new("abandon v. 放弃", 60, 220, 700, 688, 11, false),
+            new("12", 300, 320, 30, 20, 11, false),               // 页码（视觉最底）
+        };
+        var spot = Assert.Single(OverlayLayout.BuildSpots(lines, 842));
+        Assert.StartsWith("abandon", spot.Speak);
+    }
+
+    [Fact]
+    public void Unit_Title_Lines_Get_No_Spots()
+    {
+        // Unit 小标题不挂按钮（用户要求，不用翻译）；"unit n." 词条行要求 Unit 后跟数字，不受影响
+        var lines = new List<PdfLine>
+        {
+            new("Unit 3", 60, 200, 700, 680, 12, false),
+            new("● Unit 4", 60, 200, 700, 680, 12, false),
+            new("change v. 改变", 60, 220, 700, 688, 11, false),
+            new("unit n. 单元", 60, 220, 700, 688, 11, false),
+        };
+        var spots = OverlayLayout.BuildSpots(lines, 842);
         Assert.Equal(2, spots.Count);
-        Assert.Equal("Unit 12", spots[0].Speak);
-        Assert.Equal(150, spots[0].RightPt);
-        Assert.StartsWith("abandon", spots[1].Speak);
-        Assert.Equal(220, spots[1].RightPt);
+        Assert.StartsWith("change", spots[0].Speak);
+        Assert.StartsWith("unit", spots[1].Speak);
     }
 
     [Fact]
@@ -99,5 +128,31 @@ public class OverlayLayoutTests
         Assert.Equal("increase", spots[0].Speak);
         Assert.Equal(210, spots[0].RightPt); // 锚在自己的格子右缘
         Assert.Equal("We need to increase productivity.", spots[1].Speak);
+    }
+
+    [Fact]
+    public void Merged_Table_Row_Anchors_At_First_Run()
+    {
+        // 文本层表格书（中策词讲义）ClusterLines 把同视觉行的词条列+释义列并成一行：
+        // "threaten 【释义】 威胁，恐吓" 整行 R=251（按钮会压到"恐吓"后），
+        // "field n." 的 n. 是释义列漂过来的（R=208 按钮压"田地"）。
+        // 行带 Runs 时锚点与发音文本都取首跑段。正文基准行把 body 字号压到 6.0（真书实况），
+        // field 行（fs 7.1）才走 Heading/Entry 分支而不是段落分支。
+        var lines = new List<PdfLine>
+        {
+            new("政府尚未对他的言论作出回应，表示正在研究。", 145, 313, 750, 740, 6.0, false),
+            new("如果你试图让他们集中注意力，可能会得到一心多用的回答。", 145, 490, 730, 720, 6.0, false),
+            new("threaten 【释义】 威胁，恐吓", 68, 251, 723, 710, 6.2, false,
+                [new PdfRun("threaten", 68, 120), new PdfRun("【释义】 威胁，恐吓", 145, 251)]),
+            new("field n.", 80, 208, 235, 222, 7.1, false,
+                [new PdfRun("field", 80, 112), new PdfRun("n.", 199, 208)]),
+        };
+        var spots = OverlayLayout.BuildSpots(lines);
+
+        Assert.Equal(2, spots.Count);
+        Assert.Equal("threaten", spots[0].Speak);
+        Assert.Equal(120, spots[0].RightPt);
+        Assert.Equal("field", spots[1].Speak);
+        Assert.Equal(112, spots[1].RightPt);
     }
 }

@@ -13,6 +13,9 @@
       <Setter Property="Foreground" Value="#E5484D"/>
       <Setter Property="BorderBrush" Value="#80E5484D"/>
     </Style>
+    <Style Selector="TextBlock.error">
+      <Setter Property="Foreground" Value="#C62828"/>
+    </Style>
   </UserControl.Styles>
 
   <Grid RowDefinitions="Auto,*" Margin="28,22,28,24">
@@ -76,25 +79,44 @@
                 <StackPanel Spacing="8" Margin="0,40,0,0" HorizontalAlignment="Center" VerticalAlignment="Center"
                             IsVisible="{Binding HasNoDays}">
                   <TextBlock Text="🗓️" FontSize="30" HorizontalAlignment="Center" Opacity="0.5"/>
-                  <TextBlock Text="还没有学习记录&#10;去讲义里点几个 📌 吧" FontSize="12" Opacity="0.6"
+                  <TextBlock Text="还没有学习记录&#10;去讲义里点几个 📌，或点右侧「＋ 添加」手动记词" FontSize="12" Opacity="0.6"
                              TextAlignment="Center"/>
                 </StackPanel>
               </Panel>
             </Grid>
           </Border>
 
-          <!-- 右：所选日期的明细（单词 + 释义 + 出处句） -->
+          <!-- 右：所选日期的明细（单词 + 释义 + 出处句）；右上角 ＋ 展开手动记词输入行 -->
           <Border Grid.Column="1" Classes="card" Padding="16,12" Margin="0,6,0,0">
-            <Grid RowDefinitions="Auto,Auto,*">
-              <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="0,0,0,2">
-                <TextBlock Text="{Binding SelectedDay.Label, FallbackValue='当日明细'}" FontSize="15" FontWeight="SemiBold"/>
-                <TextBlock Text="{Binding SelectedDay.CountText}" FontSize="12" Opacity="0.6" VerticalAlignment="Center"/>
+            <Grid RowDefinitions="Auto,Auto,Auto,Auto,*">
+              <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,2">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                  <TextBlock Text="{Binding SelectedDay.Label, FallbackValue='当日明细'}" FontSize="15" FontWeight="SemiBold"/>
+                  <TextBlock Text="{Binding SelectedDay.CountText}" FontSize="12" Opacity="0.6" VerticalAlignment="Center"/>
+                </StackPanel>
+                <Button Grid.Column="1" Content="＋ 添加" Padding="10,3" FontSize="12" Classes="flat"
+                        Click="OnAddWordClick"
+                        ToolTip.Tip="手动记词：输入单词或短语（多个用逗号隔开），词典有的自动带释义，并排进复习队列"/>
+              </Grid>
+
+              <!-- 手动记词输入行：回车记入、Esc 收起（＋ 按钮点击后自动聚焦） -->
+              <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" Margin="0,6,0,2"
+                          IsVisible="{Binding ManualInputOpen}">
+                <TextBox x:Name="ManualBox" Width="340" Watermark="输入单词或短语，多个用逗号隔开"
+                         Text="{Binding ManualInput, Mode=TwoWay}" KeyDown="OnManualBoxKeyDown"/>
+                <Button Content="记入" Padding="14,5" Command="{Binding ConfirmManualInputCommand}"
+                        ToolTip.Tip="记入今天的学习列表（回车亦可）"/>
+                <Button Content="收起" Padding="10,5" Classes="flat" Command="{Binding CancelManualInputCommand}"/>
               </StackPanel>
-              <TextBlock Grid.Row="1" Text="{Binding TtsError}" FontSize="11" Foreground="#C62828" Margin="0,2,0,0"
+
+              <TextBlock Grid.Row="2" Text="{Binding ManualFeedback}" FontSize="11.5" Margin="0,0,0,2" TextWrapping="Wrap"
+                         Foreground="#3B7DD8" Classes.error="{Binding ManualFeedbackError}"
+                         IsVisible="{Binding ManualFeedback, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+              <TextBlock Grid.Row="3" Text="{Binding TtsError}" FontSize="11" Foreground="#C62828" Margin="0,2,0,0"
                          TextWrapping="Wrap"
                          IsVisible="{Binding TtsError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 
-              <ListBox Grid.Row="2" ItemsSource="{Binding Words}" Background="Transparent" Margin="0,8,0,0"
+              <ListBox Grid.Row="4" ItemsSource="{Binding Words}" Background="Transparent" Margin="0,8,0,0"
                        IsVisible="{Binding HasSelection}">
                 <ListBox.ItemTemplate>
                   <DataTemplate x:DataType="vm:StudyWordItem">
@@ -120,7 +142,7 @@
                 </ListBox.ItemTemplate>
               </ListBox>
 
-              <TextBlock Grid.Row="2" Text="点左侧日期或“查看”即可看到当天记录的单词与释义"
+              <TextBlock Grid.Row="4" Text="点左侧日期或“查看”即可看到当天记录的单词与释义，点右上角「＋ 添加」可直接录词"
                          FontSize="12" Opacity="0.55" HorizontalAlignment="Center" VerticalAlignment="Center"
                          IsVisible="{Binding HasSelection, Converter={x:Static BoolConverters.Not}}"/>
             </Grid>

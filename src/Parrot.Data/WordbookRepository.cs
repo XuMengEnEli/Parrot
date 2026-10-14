@@ -6,10 +6,7 @@ namespace Parrot.Data;
 /// <summary>词库条目（视图模型友好，due/wrong 参与弹窗优先级）。</summary>
 public sealed record WordEntry(
     string Word, string Phonetic, string Translation, string? Tag,
-    int Reps, double Ease, int Interval, DateOnly Due, int WrongCount)
-{
-    public bool IsDue(DateOnly today) => Due <= today;
-}
+    int Reps, double Ease, int Interval, DateOnly Due, int WrongCount);
 
 /// <summary>
 /// 内嵌词库仓储（原"生词本"页已按需求移除，本表退为纯词典数据源）：ECDICT 导入、
@@ -17,8 +14,6 @@ public sealed record WordEntry(
 /// </summary>
 public sealed class WordbookRepository(LocalDatabase db)
 {
-    public void EnsureWordSchema() => db.EnsureSchema();
-
     private (SqliteConnection conn, SqliteTransaction tx)? _bulk;
 
     /// <summary>批量导入事务作用域：期间所有 Import 复用同一连接+单个事务。

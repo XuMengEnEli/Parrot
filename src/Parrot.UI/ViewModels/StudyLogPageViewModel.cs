@@ -17,16 +17,18 @@ public sealed partial class StudyLogPageViewModel : PageViewModelBase
 {
     private readonly StudyLogRepository _log;
     private readonly ReviewRepository? _review;
+    private readonly WordbookRepository? _wordbook;
     private readonly ITtsService? _tts;
     private readonly IAudioPlayer? _audio;
 
     public StudyLogPageViewModel(StudyLogRepository log, ITtsService? tts = null, IAudioPlayer? audio = null,
-        ReviewRepository? review = null)
+        ReviewRepository? review = null, WordbookRepository? wordbook = null)
     {
         _log = log;
         _tts = tts;
         _audio = audio;
         _review = review;
+        _wordbook = wordbook;
         Refresh();
     }
 
@@ -224,6 +226,81 @@ public sealed partial class StudyLogPageViewModel : PageViewModelBase
         _review?.PruneUnpinned();
         Refresh();
     }
+
+    // ---------- ＋ 手动记词：不翻讲义也能随时补一个词进今天的学习 ----------
+
+    /// <summary>手动添加输入区是否展开（＋ 按钮切换）。</summary>
+    [ObservableProperty]
+    private bool _manualInputOpen;
+
+    [ObservableProperty]
+    private string _manualInput = "";
+
+    /// <summary>手动添加的即时反馈（记入几个/谁已在列表/为什么没记），error 态标红。</summary>
+    [ObservableProperty]
+    private string _manualFeedback = "";
+
+    [ObservableProperty]
+    private bool _manualFeedbackError;
+
+    [RelayCommand]
+    private void OpenManualInput()
+    {
+        ManualInput = "";
+        ManualFeedback = "";
+        ManualFeedbackError = false;
+        ManualInputOpen = true;
+    }
+
+    [RelayCommand]
+    private void CancelManualInput() => ManualInputOpen = false;
+
+    /// <summary>
+    /// 把输入框里的词记入今天：标点/换行可一次录多个，短语整体保留（空格不当分隔符，"give up" 要整记）；
+    /// 词典有的自动带释义，与 📌 同口径排进复习（记入即起锚，首访 1 天后）。同日重复只提示不报错。
+    /// </summary>
+    [RelayCommand]
+    private void ConfirmManualInput()
+    {
+        var terms = ManualInput.Split(ManualSeparators, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (terms.Count == 0)
+        {
+            ManualFeedback = "先输入至少一个单词";
+            ManualFeedbackError = true;
+            return;
+        }
+
+        var today = DateOnly.FromDateTime(DateTime.Now);
+        int added = 0;
+        var skipped = new List<string>();
+        foreach (var term in terms)
+        {
+            // 出处留空＝手动录入；词典查不到就先空着，列表页会回落到词库现取
+            if (_log.Add(term, _wordbook?.Lookup(term)?.Translation ?? "", "", today))
+            {
+                added++;
+                _review?.ScheduleFirst(term, today);
+            }
+            else
+            {
+                skipped.Add(term);
+            }
+        }
+        Refresh();
+        if (added > 0)
+            SelectedDay = Days.FirstOrDefault(d => d.Day == today.ToString("yyyy-MM-dd")); // 刚记的词要立刻看得见
+
+        ManualFeedback = added == 0
+            ? $"{string.Join("、", skipped)} 今天已在列表里"
+            : $"已记入 {added} 个词" + (skipped.Count > 0 ? $" · {string.Join("、", skipped)} 已在列表" : "");
+        ManualFeedbackError = added == 0;
+        if (added > 0) ManualInput = ""; // 成功的清掉好连录，没记上的留着改
+    }
+
+    /// <summary>多词分隔符：中英文标点与换行都认，空格不算——"give up" 要整体记。</summary>
+    private static readonly char[] ManualSeparators = ['，', ',', '；', ';', '、', '\n', '\r', '\t'];
 
     [RelayCommand]
     private async Task SpeakAsync(string? word)

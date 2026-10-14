@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Parrot.UI.ViewModels;
 
@@ -26,4 +27,16 @@ public partial class PageHost : UserControl
         base.OnUnloaded(e);
         (DataContext as PageCardViewModel)?.OnInvisible();
     }
+
+    // 遮挡罩层的悬停露词：坐标在画布空间（Viewbox 缩放由 GetPosition 自动反变换）
+    private void Grid_PointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (sender is not Grid grid) return;
+        var p = e.GetPosition(grid);
+        if (DataContext is PageCardViewModel card)
+            card.DebugPointerMoved(p.X, p.Y);
+    }
+
+    private void Grid_PointerExited(object? sender, PointerEventArgs e)
+        => (DataContext as PageCardViewModel)?.ClearMaskReveal();
 }

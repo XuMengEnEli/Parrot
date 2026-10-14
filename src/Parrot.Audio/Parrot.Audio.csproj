@@ -2,16 +2,18 @@
 
   <PropertyGroup>
     <RootNamespace>Parrot.Audio</RootNamespace>
+    <!-- MacAudioPlayer 经 floatChannelData 写 PCM buffer（float** 解引用） -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- 句子→Edge TTS（内置 Sec-MS-GEC 时钟纠偏+403 重试）；单词→有道 dictvoice -->
-    <PackageReference Include="EdgeTTS.DotNet" Version="0.4.0" />
-    <!-- 播放：Win 用 NAudio；mac 走 afplay（进程外播放，不自研跨平台播放器） -->
+    <!-- 单词→有道 dictvoice；句子→自研 EdgeSpeechClient（EdgeTTS.DotNet 0.4.0 因缺 MUID 握手 403 已弃用） -->
+    <!-- 播放：Win 用 NAudio；mac 走常驻 AVAudioEngine（进程外播放仅作回落） -->
     <PackageReference Include="NAudio" Version="3.1.0" />
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Parrot.Tests" />
     <ProjectReference Include="..\Parrot.Core\Parrot.Core.csproj" />
   </ItemGroup>
 

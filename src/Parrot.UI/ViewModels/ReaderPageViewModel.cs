@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Text.RegularExpressions;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -83,6 +84,17 @@ public sealed partial class ReaderPageViewModel : PageViewModelBase
 
     public double TextFontSize => TextSizeIndex switch { 0 => 13, 1 => 15, 2 => 17, _ => 20 };
 
+    // ---------- 遮挡模式：词行只留主词，右侧释义盖灰条，看英文自测回忆 ----------
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(MaskGlyph))]
+    private bool _isMaskOn;
+
+    public string MaskGlyph => IsMaskOn ? "👁" : "🙈";
+
+    [RelayCommand]
+    private void ToggleMask() => IsMaskOn = !IsMaskOn;
+
     // ---------- 文档选择 ----------
 
     [ObservableProperty]
@@ -132,7 +144,7 @@ public sealed partial class ReaderPageViewModel : PageViewModelBase
 
     private readonly Dictionary<PdfDocumentSource, List<PageCardViewModel>> _pagesCache = new();
     private readonly Dictionary<PdfDocumentSource, IReadOnlyList<PdfBlock>> _blocksCache = new();
-    private readonly Dictionary<PdfDocumentSource, System.Collections.Concurrent.ConcurrentDictionary<int, List<SpeakSpot>>> _spotsCache = new();
+    private readonly Dictionary<PdfDocumentSource, System.Collections.Concurrent.ConcurrentDictionary<int, PageOcrData>> _spotsCache = new();
     private CancellationTokenSource? _blocksCts;
 
     partial void OnSelectedDocumentChanged(PdfDocumentSource? value)
@@ -251,16 +263,18 @@ public sealed partial class ReaderPageViewModel : PageViewModelBase
                 // 图形页（思维导图）OCR 只有碎片字块 → 不过"确有正文"门槛就不做任何标注，保留干净原图
                 if (lines is { Count: > 0 } && OcrLayout.WorthKeeping(lines))
                 {
-                    var spots = OverlayLayout.BuildSpots(lines);
-                    if (spots.Count > 0)
-                    {
-                        ok++;
-                        GetSpotsMap(doc)[page] = spots;
-                        if (ReferenceEquals(SelectedDocument, doc)
-                            && _pagesCache.TryGetValue(doc, out var pages)
-                            && page >= 1 && page <= pages.Count)
-                            pages[page - 1].SetSpots(spots);
-                    }
+                    var size = doc.GetPageSizePoints(page - 1);
+                    var mask = MaskLayout.ComputeMaskLeftFraction(lines, size.Width, size.Height);
+                    var data = new PageOcrData(OverlayLayout.BuildSpots(lines, size.Height), mask,
+                        MaskLayout.ComputeOcrMaskRows(lines, mask, size.Width),
+                        MaskLayout.ComputeMaskVerticalBand(lines, mask, size.Width, size.Height),
+                        MaskLayout.ComputeTitleSpans(lines, mask, size.Width, size.Height));
+                    ok += data.Spots.Count > 0 ? 1 : 0;
+                    GetSpotsMap(doc)[page] = data;
+                    if (ReferenceEquals(SelectedDocument, doc)
+                        && _pagesCache.TryGetValue(doc, out var pages)
+                        && page >= 1 && page <= pages.Count)
+                        pages[page - 1].SetOcr(data.Spots, data.MaskLeftFraction, data.MaskRows, data.MaskBand, data.TitleSpans);
                 }
                 OcrStatus = done < scannedPages.Count ? $"OCR 标注原图🔊 {done}/{scannedPages.Count}…" : null;
                 if (cts.IsCancellationRequested || !ReferenceEquals(SelectedDocument, doc)) break;
@@ -335,18 +349,24 @@ public sealed partial class ReaderPageViewModel : PageViewModelBase
             ApplySpotsToCards(doc, map);
             return;
         }
-        Dictionary<int, List<SpeakSpot>> fresh;
+        Dictionary<int, PageOcrData> fresh;
         try
         {
             fresh = await Task.Run(() =>
             {
-                var m = new Dictionary<int, List<SpeakSpot>>();
+                var m = new Dictionary<int, PageOcrData>();
                 for (int i = 0; i < doc.PageCount; i++)
                 {
                     var lines = doc.GetPageLines(i);
                     if (lines.Count == 0) continue;
-                    var spots = OverlayLayout.BuildSpots(lines);
-                    if (spots.Count > 0) m[i + 1] = spots;
+                    var spots = OverlayLayout.BuildSpots(lines, doc.GetPageSizePoints(i).Height);
+                    var size = doc.GetPageSizePoints(i);
+                    var mask = MaskLayout.ComputeMaskLeftFraction(lines, size.Width, size.Height);
+                    if (spots.Count == 0 && mask is null) continue;
+                    m[i + 1] = new PageOcrData(spots, mask,
+                        MaskLayout.ComputeMaskRows(lines, mask, size.Width),
+                        MaskLayout.ComputeMaskVerticalBand(lines, mask, size.Width, size.Height),
+                        MaskLayout.ComputeTitleSpans(lines, mask, size.Width, size.Height)); // 热点与遮挡边界互不绑定，有谁算出来就存谁
                 }
                 return m;
             });
@@ -356,16 +376,16 @@ public sealed partial class ReaderPageViewModel : PageViewModelBase
         ApplySpotsToCards(doc, map);
     }
 
-    private void ApplySpotsToCards(PdfDocumentSource doc, IReadOnlyDictionary<int, List<SpeakSpot>> map)
+    private void ApplySpotsToCards(PdfDocumentSource doc, IReadOnlyDictionary<int, PageOcrData> map)
     {
         if (!ReferenceEquals(SelectedDocument, doc)) return; // 缓存已存，只是不动当前视图
         if (!_pagesCache.TryGetValue(doc, out var pages)) return;
-        foreach (var (page, spots) in map)
+        foreach (var (page, data) in map)
             if (page >= 1 && page <= pages.Count)
-                pages[page - 1].SetSpots(spots);
+                pages[page - 1].SetOcr(data.Spots, data.MaskLeftFraction, data.MaskRows, data.MaskBand, data.TitleSpans);
     }
 
-    private System.Collections.Concurrent.ConcurrentDictionary<int, List<SpeakSpot>> GetSpotsMap(PdfDocumentSource doc)
+    private System.Collections.Concurrent.ConcurrentDictionary<int, PageOcrData> GetSpotsMap(PdfDocumentSource doc)
     {
         lock (_spotsCache)
             return _spotsCache.TryGetValue(doc, out var m) ? m : _spotsCache[doc] = new();
@@ -401,7 +421,7 @@ public sealed partial class ReaderPageViewModel : PageViewModelBase
             case PdfBlockKind.Entry:
             {
                 var f = b.Fragments.Count > 0 ? b.Fragments[0] : new PdfFragment("", null);
-                return new EntryViewModel(f.Display, WrapSpeak(f));
+                return new EntryViewModel(f.Display, WrapSpeak(f), this);
             }
             case PdfBlockKind.ListItem:
             case PdfBlockKind.Paragraph:
@@ -651,7 +671,7 @@ public sealed partial class ReaderPageViewModel : PageViewModelBase
 
 // ---------- 版式块的视图模型（XAML 按类型选模板） ----------
 
-public abstract class BlockViewModel
+public abstract class BlockViewModel : ObservableObject
 {
     protected BlockViewModel(int page) => Page = page;
     public int Page { get; }
@@ -663,12 +683,39 @@ public sealed class PageBreakViewModel(int page) : BlockViewModel(page);
 /// <summary>扫描件页占位（无文本层，可跳原图；OCR 完成后句尾 🔊 标在原图上）。</summary>
 public sealed class ScannedPageViewModel(int page) : BlockViewModel(page);
 
-/// <summary>原图叠加项：句尾按钮位置（位图像素坐标）+ 发音 VM。</summary>
-public sealed class OverlayItemViewModel(SentenceItemViewModel audio, double x, double y)
+/// <summary>原图叠加项：句尾按钮位置（位图像素坐标）+ 发音 VM。
+/// 必须声明 INotifyPropertyChanged：MaskVisible 在遮挡开合/悬停露出时改，绑定靠它刷新。</summary>
+public sealed class OverlayItemViewModel(SentenceItemViewModel audio, double x, double y) : System.ComponentModel.INotifyPropertyChanged
 {
     public SentenceItemViewModel Audio { get; } = audio;
     public double X { get; } = x;
     public double Y { get; } = y;
+
+    private bool _maskVisible = true;
+
+    /// <summary>遮挡模式下此按钮是否可见：释义列内容带里的按钮随罩层隐藏，悬停露出带内的浮出来可点。</summary>
+    public bool MaskVisible
+    {
+        get => _maskVisible;
+        internal set
+        {
+            if (_maskVisible == value) return;
+            _maskVisible = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MaskVisible)));
+        }
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+}
+
+/// <summary>遮挡罩层上的"露行"：该行覆盖区的位图裁片按原位整行贴在罩层上方（坐标=画布 px）。</summary>
+public sealed class MaskRevealViewModel(double left, double top, double width, double height, IImage crop)
+{
+    public double Width { get; } = width;
+    public double Height { get; } = height;
+    public double Top { get; } = top;
+    public IImage Crop { get; } = crop;
+    public Avalonia.Thickness Margin => new(left, top, 0, 0);
 }
 
 /// <summary>标题块（英文标题带发音）。</summary>
@@ -678,11 +725,83 @@ public sealed class HeadingViewModel(string text, SentenceItemViewModel? audio) 
     public SentenceItemViewModel? Audio { get; } = audio;
 }
 
-/// <summary>词条行块（词表页：英文+音标+中文一行，整行一个发音按钮）。</summary>
-public sealed class EntryViewModel(string text, SentenceItemViewModel? audio) : BlockViewModel(0)
+/// <summary>分块遮挡罩层的一块：按行块归并出的竖直覆盖段（画布 px），单元标题的空档留出不盖。</summary>
+public sealed class MaskBlockViewModel(double left, double top, double width, double height)
 {
-    public string Text { get; } = text;
-    public SentenceItemViewModel? Audio { get; } = audio;
+    public double LeftPx { get; } = left;
+    public double TopPx { get; } = top;
+    public double WidthPx { get; } = width;
+    public double HeightPx { get; } = height;
+    public bool ShowWatermark => HeightPx >= 48; // 太窄的块放不下水印字
+}
+
+/// <summary>词条行块（词表页：英文+音标+中文一行，整行一个发音按钮）。遮挡模式下只留主词。</summary>
+public sealed class EntryViewModel : BlockViewModel
+{
+    public EntryViewModel(string text, SentenceItemViewModel? audio, ReaderPageViewModel page) : base(0)
+    {
+        Text = text;
+        Audio = audio;
+        Headword = ExtractHeadword(text);
+        _page = page;
+        page.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(page.IsMaskOn))
+            {
+                OnPropertyChanged(nameof(Masked));
+                OnPropertyChanged(nameof(BarsVisible));
+            }
+        };
+    }
+
+    public string Text { get; }
+    public SentenceItemViewModel? Audio { get; }
+
+    /// <summary>行首主词（连续英文词，词性缩写/音标/中文前）；中文开头等解析不出为空串 → 该行不参与遮挡。</summary>
+    public string Headword { get; }
+
+    public bool Masked => Headword.Length > 0 && _page.IsMaskOn;
+    private readonly ReaderPageViewModel _page;
+
+    private bool _revealed;
+
+    /// <summary>遮挡悬停（文本视图）：鼠标盖在灰条上时整行原样露出，移开盖回。</summary>
+    public bool Revealed
+    {
+        get => _revealed;
+        set
+        {
+            if (SetProperty(ref _revealed, value))
+            {
+                OnPropertyChanged(nameof(BarsVisible));
+                if (HoverLog.Enabled)
+                    HoverLog.Write($"文本视图 {(value ? "悬停露出" : "盖回")}「{Headword}」");
+            }
+        }
+    }
+
+    /// <summary>遮挡态的可视部分：主词 + 灰条；悬停露出整行时隐藏。</summary>
+    public bool BarsVisible => Masked && !_revealed;
+
+    /// <summary>主词 = 行首连续的"纯英文词"（可含 - ' ·）；遇到词性缩写(n./adj.)、音标(/)、括号或中文即停。</summary>
+    private static string ExtractHeadword(string line)
+    {
+        var words = new List<string>();
+        foreach (var tok in line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (words.Count >= 5 || !char.IsAsciiLetter(tok[0])) break;
+            bool pure = true;
+            foreach (var c in tok)
+            {
+                if (char.IsAsciiLetter(c) || c is '-' or '\'' or '·') continue;
+                pure = false;
+                break;
+            }
+            if (!pure) break;
+            words.Add(tok);
+        }
+        return string.Join(' ', words);
+    }
 }
 
 /// <summary>正文段：句群流式排布（WrapPanel），每句尾挂 🔊。</summary>
@@ -697,6 +816,28 @@ public sealed class ListBlockViewModel(IReadOnlyList<SentenceItemViewModel> sent
     public IReadOnlyList<SentenceItemViewModel> Sentences { get; } = sentences;
 }
 
+/// <summary>悬停链路诊断日志：Debug 构建默认开（PARROT_HOVER_DEBUG=0 可关），Release 只认显式 =1；写 /tmp/parrot_hover.log。</summary>
+internal static class HoverLog
+{
+    public static readonly bool Enabled =
+#if DEBUG
+        Environment.GetEnvironmentVariable("PARROT_HOVER_DEBUG") != "0";
+#else
+        Environment.GetEnvironmentVariable("PARROT_HOVER_DEBUG") == "1";
+#endif
+    private const string LogPath = "/tmp/parrot_hover.log";
+    private static readonly object Gate = new();
+
+    public static void Write(string line)
+    {
+        lock (Gate)
+        {
+            try { File.AppendAllText(LogPath, $"{DateTime.Now:HH:mm:ss.fff} {line}{Environment.NewLine}"); }
+            catch { /* 诊断日志失败不影响功能 */ }
+        }
+    }
+}
+
 /// <summary>阅读页里的一页：懒渲染 + 可见性驱动（虚拟化），改 DPI 重渲。仅"原图模式"使用。</summary>
 public sealed partial class PageCardViewModel : ObservableObject
 {
@@ -704,17 +845,39 @@ public sealed partial class PageCardViewModel : ObservableObject
     private CancellationTokenSource? _cts;
     private bool _everRendered;
     private readonly double _pageHeightPt;
+    private readonly double _pageWidthPt;
     private IReadOnlyList<SpeakSpot> _spots = [];
+    private IReadOnlyList<PdfRowBox>? _maskRows;
+    private IReadOnlyList<MaskRule>? _underlines; // 位图检出的水平分隔线（讲义表格词条框），悬停整框露出用
+    private IReadOnlyList<PdfRowBox>? _revealRows; // 词条级合并行框（悬停露出单位=整个词条）；null = 待懒算
+    private PdfRowBox? _revealRow;
+    private IReadOnlyList<MaskBlockViewModel>? _maskBlocks; // 分块罩层；null = 无行框分块，退回整带单块
+    private PageCardViewModel? _continuationPeer; // 跨页词条联动时我方点亮、待随盖回清除的邻居卡
+    private bool _revealFromPeer; // 当前露行是邻居卡联动亮起的（而不是用户悬停在自己页上）
 
     public PageCardViewModel(PdfDocumentSource document, int pageIndex, ReaderPageViewModel owner)
     {
         Document = document;
         PageIndex = pageIndex;
         _owner = owner;
+        owner.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(owner.IsMaskOn))
+            {
+                // 三个可见性都依赖 IsMaskOn：只通知 MaskCoverVisible 的话，"先开页面后开遮挡"时
+                // 罩层绑定（PageHost 绑的是下面两个）收不到变更，罩层永远不出现
+                OnPropertyChanged(nameof(MaskCoverVisible));
+                OnPropertyChanged(nameof(MaskBlocksVisible));
+                OnPropertyChanged(nameof(MaskCoverWholeVisible));
+                ClearMaskReveal(); // 罩层一关，露词必须跟着消失
+                UpdateOverlayMasking(); // MaskReveal 已空时上面不会发通知，这里必须显式重算按钮显隐
+            }
+        };
         HasText = document.PageHasText(pageIndex);
         var size = document.GetPageSizePoints(pageIndex);
         AspectRatio = size.Width / Math.Max(1, size.Height);
         _pageHeightPt = Math.Max(1, size.Height);
+        _pageWidthPt = Math.Max(1, size.Width);
     }
 
     public PdfDocumentSource Document { get; }
@@ -736,13 +899,84 @@ public sealed partial class PageCardViewModel : ObservableObject
     [ObservableProperty]
     private double _imageHeightPx = 876;
 
+    partial void OnImageWidthPxChanged(double value)
+    {
+        OnPropertyChanged(nameof(MaskCoverWidth));
+        RebuildMaskBlocks(); // 块几何是画布 px，位图就位/缩放后要重算
+        UpdateOverlayMasking(); // 边界/内容带也是画布 px，一并重算
+    }
+
+    partial void OnImageHeightPxChanged(double value)
+    {
+        OnPropertyChanged(nameof(MaskCoverTopPx));
+        OnPropertyChanged(nameof(MaskCoverHeightPx));
+        OnPropertyChanged(nameof(MaskCoverMargin));
+        RebuildMaskBlocks();
+        UpdateOverlayMasking();
+    }
+
     /// <summary>句尾 🔊 热点（原图视图叠加层；坐标随 RenderDpi 换算）。</summary>
     public ObservableCollection<OverlayItemViewModel> Overlays { get; } = [];
 
-    internal void SetSpots(IReadOnlyList<SpeakSpot> spots)
+    private double? _maskLeftFraction;
+    private (double Top, double Bottom)? _maskBand; // 竖直内容带（页高分数，y-up）；null = 盖整高
+    private IReadOnlyList<(double Top, double Bottom)>? _titleSpans; // 罩层空档只在这些标题行处切开
+
+    /// <summary>OCR 推算出的释义列起始（页宽分数，遮挡罩层左缘）；null = 推算不出。</summary>
+    public double? MaskLeftFraction => _maskLeftFraction;
+
+    /// <summary>原图遮挡罩层（不透明）：开且边界可信才显示。</summary>
+    public bool MaskCoverVisible => _owner.IsMaskOn && _maskLeftFraction.HasValue;
+
+    /// <summary>罩层宽度 = 页宽 − 释义列起始（位图像素，Viewbox 随列宽统一缩放）。</summary>
+    public double MaskCoverWidth => (1 - (_maskLeftFraction ?? 0)) * ImageWidthPx;
+
+    /// <summary>罩层上缘距画布顶（px）：内容带顶之上不盖（页眉露出来）；无带 = 盖整高。</summary>
+    public double MaskCoverTopPx => _maskBand is { } band ? (1 - band.Top) * ImageHeightPx : 0;
+
+    /// <summary>罩层高度（px）：内容带高（页眉/页码留在外面）；无带 = 整页高。</summary>
+    public double MaskCoverHeightPx
+        => _maskBand is { } band ? (band.Top - band.Bottom) * ImageHeightPx : ImageHeightPx;
+
+    public Avalonia.Thickness MaskCoverMargin => new(0, MaskCoverTopPx, 0, 0);
+
+    /// <summary>分块罩层（按行块归并，单元标题空档露出）；null = 退回整带单块罩层。</summary>
+    public IReadOnlyList<MaskBlockViewModel>? MaskBlocks => _maskBlocks;
+
+    /// <summary>分块罩层可用：至少有一块可盖。</summary>
+    public bool MaskBlocksVisible => MaskCoverVisible && _maskBlocks is { Count: > 0 };
+
+    /// <summary>整带单块罩层（退回用）：有边界但推不出行框分块。</summary>
+    public bool MaskCoverWholeVisible => MaskCoverVisible && _maskBlocks is not { Count: > 0 };
+
+    /// <summary>悬停露词：光标所在词的原位裁片；null = 当前没有露词。</summary>
+    [ObservableProperty]
+    private MaskRevealViewModel? _maskReveal;
+
+    partial void OnMaskRevealChanged(MaskRevealViewModel? value) => UpdateOverlayMasking();
+
+    internal void SetOcr(IReadOnlyList<SpeakSpot> spots, double? maskLeftFraction,
+        IReadOnlyList<PdfRowBox>? maskRows = null, (double Top, double Bottom)? maskBand = null,
+        IReadOnlyList<(double Top, double Bottom)>? titleSpans = null)
     {
         _spots = spots;
+        _maskLeftFraction = maskLeftFraction;
+        _maskRows = maskRows;
+        _maskBand = maskBand;
+        _titleSpans = titleSpans;
+        _revealRows = null;
+        _revealRow = null;
+        _continuationPeer = null;
+        _revealFromPeer = false;
+        MaskReveal = null;
         ApplySpots();
+        OnPropertyChanged(nameof(MaskCoverVisible));
+        OnPropertyChanged(nameof(MaskCoverWidth));
+        OnPropertyChanged(nameof(MaskLeftFraction));
+        OnPropertyChanged(nameof(MaskCoverTopPx));
+        OnPropertyChanged(nameof(MaskCoverHeightPx));
+        OnPropertyChanged(nameof(MaskCoverMargin));
+        RebuildMaskBlocks();
     }
 
     private void ApplySpots()
@@ -754,6 +988,326 @@ public sealed partial class PageCardViewModel : ObservableObject
                 _owner.CreateSpeak(s.Speak, s.Gloss),
                 s.RightPt * ppp + 6,                 // 句尾右缘外一点
                 (_pageHeightPt - s.MidYPt) * ppp - 14)); // y-up→y-down，按钮垂直居中于行
+        UpdateOverlayMasking();
+    }
+
+    /// <summary>遮挡模式下按钮逐个自管显隐：释义列内容带里的按钮随罩层隐藏（罩层面干净），
+    /// 悬停露出带内的浮出来可点（否则掀开了也点不到例句发音）。替代"罩层压按钮"的整层画法，
+    /// 因为露出裁片比罩层更高，单靠叠放顺序无法同时满足"静止被盖、露出可点"。</summary>
+    private void UpdateOverlayMasking()
+    {
+        double boundaryPx = (_maskLeftFraction ?? 0) * ImageWidthPx;
+        double bandTop = MaskCoverTopPx, bandBottom = bandTop + MaskCoverHeightPx;
+        var reveal = MaskReveal;
+        foreach (var o in Overlays)
+        {
+            double cy = o.Y + 14; // 按钮中心（ApplySpots 里按行中线放置）
+            bool inCoverZone = _owner.IsMaskOn && _maskLeftFraction.HasValue
+                && cy > bandTop && cy < bandBottom && o.X + 14 >= boundaryPx;
+            bool inRevealBand = reveal is { } rv
+                && cy >= rv.Top - 4 && cy <= rv.Top + rv.Height + 4;
+            o.MaskVisible = !inCoverZone || inRevealBand;
+        }
+    }
+
+    /// <summary>按行块重建分块罩层几何（画布 px）：空档只在单元/节标题行处切开露出；位图尺寸变化时重建。</summary>
+    private void RebuildMaskBlocks()
+    {
+        IReadOnlyList<MaskBlockViewModel>? blocks = null;
+        if (_maskRows is { Count: > 0 } rows && _maskLeftFraction is { } fraction)
+        {
+            var list = new List<MaskBlockViewModel>();
+            foreach (var b in MaskLayout.ComputeCoverBlocks(rows, _maskBand, _pageHeightPt, _titleSpans))
+                list.Add(new MaskBlockViewModel(
+                    fraction * ImageWidthPx,
+                    (1 - b.Top / _pageHeightPt) * ImageHeightPx,
+                    (1 - fraction) * ImageWidthPx,
+                    (b.Top - b.Bottom) / _pageHeightPt * ImageHeightPx));
+            if (list.Count > 0) blocks = list;
+        }
+        _maskBlocks = blocks;
+        OnPropertyChanged(nameof(MaskBlocks));
+        OnPropertyChanged(nameof(MaskBlocksVisible));
+        OnPropertyChanged(nameof(MaskCoverWholeVisible));
+    }
+
+    /// <summary>悬停露出的行框（下划线围出的整词条框优先——含框内思维导图等无文字区；推不出再退
+    /// 主词锚点分组、逐行）。懒算：热点/位图/分隔线在悬停时才都齐。</summary>
+    private IReadOnlyList<PdfRowBox> RevealRows
+        => _revealRows ??= (_underlines is { Count: > 0 }
+                ? MaskLayout.ComputeEntryRowsByUnderlines(_maskRows!, _underlines, _maskLeftFraction,
+                    _pageWidthPt, _pageHeightPt, _maskBand)
+                : null)
+            ?? MaskLayout.ComputeEntryRows(_maskRows!, _spots, _maskLeftFraction, _pageWidthPt,
+                _pageHeightPt, _maskBand)
+            ?? _maskRows!;
+
+    /// <summary>鼠标在罩层上移动：按光标高度找到所属词条，整个词条的原位裁片露出（多义词的几条释义一起看）。</summary>
+    public void UpdateMaskReveal(double canvasX, double canvasY)
+    {
+        if (!_owner.IsMaskOn || _maskLeftFraction is not { } fraction
+            || _maskRows is null || Image is null)
+        {
+            HoverVerdict("拦截（前提不满足）");
+            return;
+        }
+        double ppp = _owner.RenderDpi / 72.0;
+        double xPt = canvasX / ppp, yUp = _pageHeightPt - canvasY / ppp;
+        if (xPt < fraction * _pageWidthPt - 2)
+        {
+            HoverVerdict($"光标在主词列 xPt≈{Math.Round(xPt)}pt 边界≈{fraction * _pageWidthPt:F0}pt");
+            ClearMaskReveal(); return;
+        } // 光标不在罩层上（主词列/按钮区）
+        if (_maskBand is { } band
+            && (yUp > band.Top * _pageHeightPt || yUp < band.Bottom * _pageHeightPt))
+        {
+            HoverVerdict("内容带外（页眉/页码区）");
+            ClearMaskReveal(); return;
+        } // 页眉/页码露在外面，罩层不响应
+        var row = FindMaskRow(yUp);
+        if (row is null)
+        {
+            HoverVerdict($"行未命中 yUp≈{yUp:F0}pt");
+            ClearMaskReveal(); return;
+        }
+        if (MaskReveal is not null && ReferenceEquals(_revealRow, row))
+        {
+            _revealFromPeer = false; // 用户接管：联动亮起的露出转为自己悬停，邻居盖回时不再牵连
+            return; // 还是同一行，保持现状
+        }
+        _revealRow = row;
+        _revealFromPeer = false;
+        MaskReveal = BuildReveal(row, fraction, ppp);
+        HoverVerdict($"命中词条「{(row.Text.Length > 48 ? row.Text[..48] + "…" : row.Text)}」");
+        UpdateContinuationReveal(row);
+    }
+
+    public void ClearMaskReveal()
+    {
+        ClearContinuationPeer(); // 我方的露出撤了，联动亮起的邻居页露出也要跟着撤
+        if (MaskReveal is null) return;
+        _revealRow = null;
+        MaskReveal = null;
+        HoverVerdict("盖回");
+    }
+
+    /// <summary>跨页词条联动（图二）：词条排满到页底时下半截接在下一页页首——悬停贴着带底的本页末组，
+    /// 就把下一页贴着带顶的首组一起亮起；反向对称（悬停页首组亮起上页末组）。两头都贴边才联动，判据保守。</summary>
+    private void UpdateContinuationReveal(PdfRowBox row)
+    {
+        ClearContinuationPeer();
+        if (_maskBand is not { } band || RevealRows.Count == 0) return;
+        var rows = RevealRows;
+        bool last = ReferenceEquals(row, rows[^1]), firstRow = ReferenceEquals(row, rows[0]);
+        if (!last && !firstRow) return;
+        if (last && TryContinue(rows[^1].Bottom, band.Bottom * _pageHeightPt, NextCard, revealFirst: true)) return;
+        if (firstRow)
+        {
+            // 我方首组若带着主词锚，说明词条从本页顶头开始（product 这类），不是上页词条的续段 → 不联动
+            if (HasHeadwordAnchor(rows[0]))
+            {
+                if (HoverDebugEnabled)
+                    HoverLog.Write("联动判否：我方首组左列有主词锚（顶头新词条非续段）→ 不亮上页");
+            }
+            else
+                TryContinue(rows[0].Top, band.Top * _pageHeightPt, PrevCard, revealFirst: false);
+        }
+    }
+
+    /// <summary>组范围里有没有主词列发音热点（主词锚）：续段（词条被页切断的下半截）左列是空的，
+    /// 而顶头新词条（product 这类）左列必有主词热点——跨页联动靠它区分"真延续"与"恰好在页顶的新词条"。</summary>
+    private bool HasHeadwordAnchor(PdfRowBox group)
+    {
+        if (_maskLeftFraction is not { } f) return true; // 判不出边界就保守当有（宁可不联动）
+        double boundary = f * _pageWidthPt;
+        return _spots.Any(s => s.RightPt < boundary - 2
+            && s.MidYPt >= group.Bottom - 4 && s.MidYPt <= group.Top + 4);
+    }
+
+    private bool TryContinue(double myEdge, double bandEdge, PageCardViewModel? peer, bool revealFirst)
+    {
+        if (peer is null || Math.Abs(myEdge - bandEdge) > 12)
+        {
+            if (HoverDebugEnabled)
+                HoverLog.Write($"联动判否：我方{(revealFirst ? "首组顶" : "末组底")}={myEdge:F1} 带边={bandEdge:F1} 差={Math.Abs(myEdge - bandEdge):F1}pt{(peer is null ? "，邻居卡未加载" : "")} → 不亮{(revealFirst ? "下" : "上")}页");
+            return false;
+        }
+        if (!peer.TryRevealContinuation(revealFirst))
+        {
+            if (HoverDebugEnabled)
+                HoverLog.Write($"联动判否：邻居{(revealFirst ? "下" : "上")}页贴边组推不出（未加载/带边不符）→ 不亮");
+            return false;
+        }
+        if (HoverDebugEnabled)
+            HoverLog.Write($"联动亮起：我方{(revealFirst ? "末组底" : "首组顶")}={myEdge:F1} 带边={bandEdge:F1} → {(revealFirst ? "下" : "上")}页贴边组露出");
+        _continuationPeer = peer;
+        return true;
+    }
+
+    /// <summary>邻居卡联动调用：亮起我这边贴着内容带边的那组（上页词条的延续 / 下页词条的起点）。</summary>
+    internal bool TryRevealContinuation(bool revealFirst)
+    {
+        if (!_owner.IsMaskOn || _maskLeftFraction is not { } fraction
+            || _maskRows is null || Image is null || _maskBand is not { } band
+            || RevealRows.Count == 0)
+            return false;
+        var row = revealFirst ? RevealRows[0] : RevealRows[^1];
+        double edge = revealFirst ? row.Top : row.Bottom;
+        double bandEdge = (revealFirst ? band.Top : band.Bottom) * _pageHeightPt;
+        if (Math.Abs(edge - bandEdge) > 12) return false;
+        if (revealFirst && HasHeadwordAnchor(row))
+        {
+            // 邻居页的首组带着主词锚 = 顶头新词条，不是上一页词条的续段 → 不亮
+            if (HoverDebugEnabled)
+                HoverLog.Write($"联动判否：下页首组左列有主词锚「{(row.Text.Length > 20 ? row.Text[..20] + "…" : row.Text)}」（顶头新词条非延续）→ 不亮");
+            return false;
+        }
+        ClearContinuationPeer(); // 自己先前联动的更远一页随之撤掉，露出链不断在半空
+        _revealFromPeer = true;
+        _revealRow = row;
+        MaskReveal = BuildReveal(row, fraction, _owner.RenderDpi / 72.0);
+        return true;
+    }
+
+    private void ClearContinuationPeer()
+    {
+        if (_continuationPeer is not { } peer) return;
+        _continuationPeer = null;
+        peer.ClearPeerReveal();
+    }
+
+    private void ClearPeerReveal()
+    {
+        if (!_revealFromPeer) return;
+        _revealFromPeer = false;
+        _revealRow = null;
+        MaskReveal = null;
+    }
+
+    private PageCardViewModel? NextCard
+        => _owner.CurrentPages is { } pages && PageIndex + 1 < pages.Count ? pages[PageIndex + 1] : null;
+
+    private PageCardViewModel? PrevCard
+        => _owner.CurrentPages is { } pages && PageIndex - 1 >= 0 ? pages[PageIndex - 1] : null;
+
+    private PdfRowBox? FindMaskRow(double yUpPt)
+    {
+        // 行槽 = 相邻词条块文字带的中点分割：行间/行尾空白也归属所在词条，整片罩层悬停都有回应
+        var sorted = RevealRows.OrderBy(r => r.Bottom).ToList(); // y-up：自下而上
+        for (int i = 0; i < sorted.Count; i++)
+        {
+            double lower = i == 0 ? double.NegativeInfinity : (sorted[i - 1].Top + sorted[i].Bottom) / 2;
+            double upper = i == sorted.Count - 1 ? double.PositiveInfinity : (sorted[i].Top + sorted[i + 1].Bottom) / 2;
+            if (yUpPt >= lower && yUpPt <= upper) return sorted[i];
+        }
+        return null;
+    }
+
+    private MaskRevealViewModel BuildReveal(PdfRowBox w, double fraction, double ppp)
+    {
+        double boundary = fraction * _pageWidthPt;
+        // 行条带横跨整个罩层（左缘=罩层边界，右缘=页右缘），上下取行文字带 ±2pt：
+        // 观感是"这一行的遮挡整条掀开"，而不是浮在页中间的一小截
+        double l = boundary, r = _pageWidthPt - 1;
+        double b = Math.Max(w.Bottom - 2, 1), t = Math.Min(w.Top + 2, _pageHeightPt - 1);
+        var ps = Image!.PixelSize; // 画布 px == 位图 px（同一 RenderDpi），直接按像素裁
+        int x0 = Math.Clamp((int)(l * ppp), 0, ps.Width - 1);
+        int y0 = Math.Clamp((int)((_pageHeightPt - t) * ppp), 0, ps.Height - 1);
+        int cw = Math.Clamp((int)Math.Ceiling((r - l) * ppp), 1, ps.Width - x0);
+        int ch = Math.Clamp((int)Math.Ceiling((t - b) * ppp), 1, ps.Height - y0);
+        var crop = new CroppedBitmap(Image, new Avalonia.PixelRect(x0, y0, cw, ch));
+        return new MaskRevealViewModel(l * ppp, (_pageHeightPt - t) * ppp, cw, ch, crop);
+    }
+
+    /// <summary>截图 harness 用：模拟"悬停在文本包含指定内容的行上"，返回是否命中。</summary>
+    internal bool DebugRevealWord(string contains)
+    {
+        if (!_owner.IsMaskOn || _maskLeftFraction is not { } || _maskRows is null) return false;
+        var w = RevealRows.FirstOrDefault(x => x.Text.Contains(contains, StringComparison.OrdinalIgnoreCase));
+        if (w is null) return false;
+        double ppp = _owner.RenderDpi / 72.0;
+        UpdateMaskReveal((w.Left + w.Right) / 2 * ppp, (_pageHeightPt - (w.Top + w.Bottom) / 2) * ppp);
+        return MaskReveal is not null;
+    }
+
+    // ---- 悬停链路诊断（设施见 HoverLog；节流状态在本卡实例上）----
+    internal static readonly bool HoverDebugEnabled = HoverLog.Enabled;
+    private long _lastArrivalTick = -10_000;
+    private string _lastHoverState = "";
+
+    /// <summary>真实鼠标事件入口：诊断模式下先记"事件到达"，再走正常处理。</summary>
+    internal void DebugPointerMoved(double x, double y)
+    {
+        if (HoverDebugEnabled)
+        {
+            var now = Environment.TickCount64;
+            if (now - _lastArrivalTick >= 300)
+            {
+                _lastArrivalTick = now;
+                HoverLog.Write($"到达 p{PageIndex + 1} ({x:F0},{y:F0}) 《{Document.Title}》");
+            }
+        }
+        UpdateMaskReveal(x, y);
+    }
+
+    private void HoverVerdict(string reason)
+    {
+        if (!HoverDebugEnabled) return;
+        var msg = $"p{PageIndex + 1} {reason} mask={_owner.IsMaskOn} 边界={_maskLeftFraction:0.###} 行数={_maskRows?.Count.ToString() ?? "无"} 位图={(Image is null ? "无" : "有")}";
+        if (_lastHoverState == msg) return;
+        _lastHoverState = msg;
+        HoverLog.Write(msg);
+    }
+
+    /// <summary>截图 harness 用：dump 罩层行框与发音热点（诊断词条分组）。</summary>
+    internal string DebugDumpMask()
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"页 {PageIndex + 1} 边界={_maskLeftFraction:0.###} 带={(_maskBand is { } b ? $"{b.Top:0.##}/{b.Bottom:0.##}" : "无")} 行数={_maskRows?.Count ?? 0} 热点数={_spots.Count} 标题区间={_titleSpans?.Count ?? 0}{(_titleSpans is { Count: > 0 } ts ? " @" + string.Join(",", ts.Select(s => $"{s.Top:0.#}-{s.Bottom:0.#}")) : "")}");
+        if (_maskRows is { } rows)
+            for (int i = 0; i < rows.Count; i++)
+                sb.AppendLine($"  行[{i:00}] T={rows[i].Top:F1} B={rows[i].Bottom:F1}「{rows[i].Text}」");
+        if (_maskBlocks is { } blocks)
+            foreach (var blk in blocks)
+                sb.AppendLine($"  块 L={blk.LeftPx:F1} T={blk.TopPx:F1} W={blk.WidthPx:F1} H={blk.HeightPx:F1} 印={blk.ShowWatermark}");
+        var reveal = RevealRows;
+        if (reveal.Count > 0 && reveal.Count < _maskRows?.Count)
+        {
+            for (int i = 0; i < reveal.Count; i++)
+                sb.AppendLine($"  组[{i:00}] T={reveal[i].Top:F1} B={reveal[i].Bottom:F1}「{(reveal[i].Text.Length > 36 ? reveal[i].Text[..36] + "…" : reveal[i].Text)}」");
+            if (_maskLeftFraction is { } fNow)
+            {
+                var anchorsNow = _spots.Where(s => s.RightPt < fNow * _pageWidthPt - 2)
+                    .Select(s => s.MidYPt).OrderByDescending(y => y).ToList();
+                var fresh = MaskLayout.ComputeEntryRows(_maskRows, _spots, _maskLeftFraction, _pageWidthPt, _pageHeightPt, _maskBand);
+                sb.AppendLine($"  缓存组数={reveal.Count} 现算组数={fresh?.Count.ToString() ?? "null"} 锚点({anchorsNow.Count})={string.Join(",", anchorsNow.Select(y => y.ToString("F1")))}");
+            }
+        }
+        else if (reveal.Count >= _maskRows?.Count)
+            sb.AppendLine($"  组=逐行退回（{reveal.Count}）");
+        foreach (var s in _spots.OrderByDescending(s => s.MidYPt))
+            sb.AppendLine($"  热点 R={s.RightPt:F0} MidY={s.MidYPt:F1}「{s.Speak}」");
+        foreach (var ln in Document.GetPageLines(PageIndex).OrderByDescending(l => l.Top))
+            sb.AppendLine($"  原始行 T={ln.Top:F1} B={ln.Bottom:F1} L={ln.Left:F1} R={ln.Right:F1} F={ln.FontSize:0.#}「{(ln.Text.Length > 40 ? ln.Text[..40] : ln.Text)}」");
+        return sb.ToString();
+    }
+
+    /// <summary>截图 harness 用：返回"悬停到文本包含指定内容的行"的画布坐标（供真实路由事件注入）。</summary>
+    internal Avalonia.Point? DebugGetRowPoint(string contains)
+    {
+        if (!_owner.IsMaskOn || _maskLeftFraction is not { } || _maskRows is null)
+        {
+            HoverLog.Write($"DebugGetRowPoint：前提不满足 mask={_owner.IsMaskOn} 边界={_maskLeftFraction:0.###} 行数={_maskRows?.Count.ToString() ?? "null"} 文档《{Document.Title}》p{PageIndex + 1}");
+            return null;
+        }
+        var w = RevealRows.FirstOrDefault(x => x.Text.Contains(contains, StringComparison.OrdinalIgnoreCase));
+        if (w is null)
+        {
+            HoverLog.Write($"DebugGetRowPoint：没找到含「{contains}」的行，共 {_maskRows.Count} 行，首行「{_maskRows[0].Text}」");
+            return null;
+        }
+        double ppp = _owner.RenderDpi / 72.0;
+        return new Avalonia.Point((w.Left + w.Right) / 2 * ppp, (_pageHeightPt - (w.Top + w.Bottom) / 2) * ppp);
     }
 
     public void OnVisible()
@@ -783,6 +1337,7 @@ public sealed partial class PageCardViewModel : ObservableObject
     {
         Image = null;
         _everRendered = false;
+        ClearMaskReveal(); // 裁片源自旧位图，位图一丢露词跟着撤
         ApplySpots();
         if (_visible)
             OnVisible();
@@ -802,6 +1357,10 @@ public sealed partial class PageCardViewModel : ObservableObject
         try
         {
             var rendered = await page.Document.RenderPageAsync(page.PageIndex, _owner.RenderDpi, cts.Token);
+            // 分隔线检测与热点到达顺序不定（文本层页先 SetOcr、扫描页先渲染），谁后到谁重置懒算缓存
+            page._underlines = MaskLayout.DetectUnderlines(
+                rendered.Pixels, rendered.WidthPx, rendered.HeightPx, rendered.RowBytes, _owner.RenderDpi / 72.0);
+            page._revealRows = null;
             page.Image = ToWriteable(rendered);
             page.ImageWidthPx = rendered.WidthPx;
             page.ImageHeightPx = rendered.HeightPx;

@@ -6,9 +6,10 @@
   <StackPanel Margin="0,0,0,16" Spacing="4">
     <!-- 位图与叠加层同在一个"位图像素"画布上，Viewbox 统一缩放到列宽 -->
     <Viewbox MaxWidth="860" Stretch="Uniform">
-      <Grid Width="{Binding ImageWidthPx}" Height="{Binding ImageHeightPx}">
+      <Grid Width="{Binding ImageWidthPx}" Height="{Binding ImageHeightPx}" ColumnDefinitions="*,*"
+            PointerMoved="Grid_PointerMoved" PointerExited="Grid_PointerExited">
         <!-- 位图到位前的占位 -->
-        <Border Background="#22000000"
+        <Border Grid.ColumnSpan="2" Background="#22000000"
                 IsVisible="{Binding Image, Converter={x:Static ObjectConverters.IsNull}}">
           <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="8">
             <TextBlock Text="{Binding DisplayNumber, StringFormat='第 {0} 页'}" HorizontalAlignment="Center" Opacity="0.7"/>
@@ -16,10 +17,12 @@
                          IsVisible="{Binding IsLoading}"/>
           </StackPanel>
         </Border>
-        <Image Source="{Binding Image}"
+        <Image Grid.ColumnSpan="2" Source="{Binding Image}"
                IsVisible="{Binding Image, Converter={x:Static ObjectConverters.IsNotNull}}"/>
-        <!-- 句尾 🔊 热点（文本层坐标或 OCR 坐标，随 RenderDpi 换算；原排版由位图原样保留） -->
-        <ItemsControl ItemsSource="{Binding Overlays}" x:CompileBindings="False">
+        <!-- 句尾 🔊 热点（文本层坐标或 OCR 坐标，随 RenderDpi 换算；原排版由位图原样保留）。
+             ZIndex 抬到罩层与露出裁片之上：释义列按钮静止时由 MaskVisible 藏起（罩层面干净），
+             悬停露出带内的按钮才能浮在裁片上可点——光"可见"不够，裁片在最上层会把它盖回去 -->
+        <ItemsControl Grid.ColumnSpan="2" ItemsSource="{Binding Overlays}" x:CompileBindings="False" ZIndex="3">
           <ItemsControl.ItemsPanel>
             <ItemsPanelTemplate>
               <Canvas/>
@@ -33,8 +36,9 @@
           </ItemsControl.ItemContainerTheme>
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="vm:OverlayItemViewModel">
-              <!-- 🔊 发音 + 📌 记入当日学习（热点并排，锚在句尾右侧） -->
-              <StackPanel Orientation="Horizontal" Spacing="3">
+              <!-- 🔊 发音 + 📌 记入当日学习（热点并排，锚在句尾右侧）；遮挡模式下释义列里的按钮随罩层隐藏、露出带内的浮出可点 -->
+              <StackPanel Orientation="Horizontal" Spacing="3"
+                          IsVisible="{Binding MaskVisible}">
                 <Button Width="28" Height="28" Padding="0" CornerRadius="14"
                         Background="#D8FFFFFF" BorderBrush="#66000000" BorderThickness="1"
                         Content="🔊" FontSize="13" Foreground="#CC000000"
@@ -51,6 +55,48 @@
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>
+        <!-- 遮挡模式（原图视图）：不透明罩层盖住释义列（主词列留在左边），从释义列起点（OCR 推算，随内容自适应）
+             盖到页右缘；释义列里的 🔊📌 按钮由 MaskVisible 自管显隐（静止随罩层藏起、露出带内浮出可点），
+             主词列按钮不受影响；推算不出边界的页不盖（宁缺毋滥）。
+             优先分块：按行块归并的覆盖块，词条间小空隙连成整片、换单元处的释义列空档（Unit 标题区）自然露出 -->
+        <ItemsControl Grid.ColumnSpan="2" ItemsSource="{Binding MaskBlocks}"
+                      IsVisible="{Binding MaskBlocksVisible}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <Canvas/>
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemContainerTheme>
+            <ControlTheme TargetType="ContentPresenter" x:DataType="vm:MaskBlockViewModel">
+              <Setter Property="Canvas.Left" Value="{Binding LeftPx}"/>
+              <Setter Property="Canvas.Top" Value="{Binding TopPx}"/>
+            </ControlTheme>
+          </ItemsControl.ItemContainerTheme>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:MaskBlockViewModel">
+              <Border Width="{Binding WidthPx}" Height="{Binding HeightPx}"
+                      Background="#FFFFFFFF" BorderBrush="#33000000" BorderThickness="1,0,0,0">
+                <TextBlock Text="释义已遮挡" HorizontalAlignment="Center" VerticalAlignment="Center"
+                           Foreground="#22000000" FontSize="13"
+                           IsVisible="{Binding ShowWatermark}"/>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <!-- 行框推不出的页退回整带单块罩层（仍只盖"内容带"，页眉/页码留在外面） -->
+        <Border Grid.ColumnSpan="2" HorizontalAlignment="Right" VerticalAlignment="Top"
+                Width="{Binding MaskCoverWidth}" Height="{Binding MaskCoverHeightPx}"
+                Margin="{Binding MaskCoverMargin}"
+                Background="#FFFFFFFF" BorderBrush="#33000000" BorderThickness="1,0,0,0"
+                IsVisible="{Binding MaskCoverWholeVisible}">
+          <TextBlock Text="释义已遮挡" HorizontalAlignment="Center" VerticalAlignment="Center"
+                     Foreground="#22000000" FontSize="13"/>
+        </Border>
+        <!-- 悬停露行：罩层保持不透明，光标所在词条的释义整块把位图裁片原位贴回（离开即盖回） -->
+        <Image Grid.ColumnSpan="2" Source="{Binding MaskReveal.Crop}"
+               Width="{Binding MaskReveal.Width}" Height="{Binding MaskReveal.Height}"
+               Margin="{Binding MaskReveal.Margin}" HorizontalAlignment="Left" VerticalAlignment="Top"
+               IsVisible="{Binding MaskReveal, Converter={x:Static ObjectConverters.IsNotNull}}"/>
       </Grid>
     </Viewbox>
     <TextBlock HorizontalAlignment="Center" Opacity="0.55" FontSize="12">

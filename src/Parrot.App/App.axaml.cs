@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Input;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 using Microsoft.Extensions.DependencyInjection;
@@ -266,6 +267,19 @@ public partial class App : Application
     }
 
     // ————————————————— DI —————————————————
+
+    // 文本视图的遮挡悬停：整行原样露出，移开盖回（EntryViewModel 模板在 App.axaml 全局声明）
+    private void EntryGrid_PointerEntered(object? sender, PointerEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is EntryViewModel entry && entry.Masked)
+            entry.Revealed = true;
+    }
+
+    private void EntryGrid_PointerExited(object? sender, PointerEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is EntryViewModel entry)
+            entry.Revealed = false;
+    }
 
     private static ServiceProvider ConfigureServices()
     {

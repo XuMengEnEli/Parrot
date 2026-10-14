@@ -72,9 +72,19 @@
         </WrapPanel>
       </Border>
 
-      <!-- 番茄专注迷你卡：状态点＋剩余时间＋细进度条（纯 Border，竖 ProgressBar 会撑坏头部）＋播放/暂停 -->
-      <Border Grid.Column="1" Classes="card" Margin="10,0,0,0" Padding="14,0"
-              IsVisible="{Binding Pomodoro, Converter={x:Static ObjectConverters.IsNotNull}}">
+      <StackPanel Grid.Column="1" Orientation="Horizontal">
+        <!-- 遮挡模式卡：词行只留主词，释义盖灰条，看英文自测回忆 -->
+        <Border Classes="card" Margin="10,0,0,0" Padding="14,0"
+                ToolTip.Tip="遮挡模式：词条只显示主词，右侧释义盖住，看英文回想中文">
+          <Button Width="34" Height="34" Padding="0" CornerRadius="17" Classes="primary"
+                  HorizontalContentAlignment="Center" VerticalAlignment="Center"
+                  Command="{Binding ToggleMaskCommand}" Content="{Binding MaskGlyph}" FontSize="12"
+                  ToolTip.Tip="开 / 关遮挡"/>
+        </Border>
+
+        <!-- 番茄专注迷你卡：状态点＋剩余时间＋细进度条（纯 Border，竖 ProgressBar 会撑坏头部）＋播放/暂停 -->
+        <Border Classes="card" Margin="10,0,0,0" Padding="14,0"
+                IsVisible="{Binding Pomodoro, Converter={x:Static ObjectConverters.IsNotNull}}">
         <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
           <StackPanel Spacing="1" VerticalAlignment="Center">
             <StackPanel Orientation="Horizontal" Spacing="5">
@@ -96,6 +106,7 @@
                   ToolTip.Tip="开始 / 暂停专注（与「番茄钟」页同一计时器）"/>
         </StackPanel>
       </Border>
+      </StackPanel>
     </Grid>
 
     <!-- 扫描件整册说明（自动切原图时出现） -->
@@ -110,7 +121,7 @@
 
     <Panel Grid.Row="2">
       <!-- 空状态 -->
-      <Border Classes="card" MaxWidth="480" Padding="40,32"
+      <Border x:Name="EmptyState" Classes="card" MaxWidth="480" Padding="40,32"
               HorizontalAlignment="Center" VerticalAlignment="Center"
               IsVisible="{Binding HasDocument, Converter={x:Static BoolConverters.Not}}">
         <StackPanel Spacing="10">

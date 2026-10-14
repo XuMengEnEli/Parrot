@@ -29,6 +29,10 @@ public sealed class ReaderOcrOrchestrationTests : IDisposable
 
     private sealed class StubOcr : IOcrService
     {
+        private readonly IReadOnlyList<OcrTextLine>? _lines;
+
+        public StubOcr(IReadOnlyList<OcrTextLine>? lines = null) => _lines = lines;
+
         public int Calls;
         private int _inFlight;
 
@@ -46,11 +50,11 @@ public sealed class ReaderOcrOrchestrationTests : IDisposable
                 if (Interlocked.CompareExchange(ref MaxInFlight, now, seen) == seen) break;
             await Task.Delay(400, ct); // 不延时的话任务瞬间完成，并发度恒为 1，测不出退化；也须长于冷渲染一页的耗时，否则永远错开
             Interlocked.Decrement(ref _inFlight);
-            IReadOnlyList<OcrTextLine> lines =
+            IReadOnlyList<OcrTextLine> lines = _lines ??
             [
-                new OcrTextLine("Unit Test Heading", 70, 40, 320, 26),   // 大行高 → Heading 热点
-                new OcrTextLine("English sentence here.", 70, 90, 300, 15),
-                new OcrTextLine("中文句子。", 70, 106, 120, 15),          // 并入同段，但 speak=null 无热点
+                new OcrTextLine("Unit Test Heading", 70, 150, 320, 26),  // 大行高 → Heading 热点（y=40 贴页顶会被页眉带滤掉，下移到正文区）
+                new OcrTextLine("English sentence here.", 70, 200, 300, 15),
+                new OcrTextLine("中文句子。", 70, 216, 120, 15),          // 并入同段，但 speak=null 无热点
             ];
             return lines;
         }
@@ -171,6 +175,75 @@ public sealed class ReaderOcrOrchestrationTests : IDisposable
         Assert.Contains("不可用", vm.ScanHint);
         Assert.Equal(2, vm.Blocks.Count(b => b is ScannedPageViewModel));
         Assert.Null(vm.OcrStatus);
+    }
+
+    [Fact]
+    public void Mask_Toggle_After_Cards_Loaded_Notifies_Cover_Visibility()
+    {
+        // 用户顺序：先打开书页（遮挡关），再点右上角眼睛开遮挡——
+        // PageHost 罩层绑定的是 MaskBlocksVisible / MaskCoverWholeVisible，
+        // 这两个通知缺了任何一个，后开遮挡时罩层永远不出现（悬停露词却正常，更具迷惑性）
+        File.WriteAllBytes(_pdfPath, BlankPdf(1));
+        var vm = new ReaderPageViewModel(new StubTts(), new StubPlayer(), restoreRecent: false);
+        var card = new PageCardViewModel(new PdfDocumentSource(_pdfPath), 0, vm);
+
+        var raised = new List<string>();
+        card.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        vm.IsMaskOn = true;
+
+        Assert.Contains(nameof(PageCardViewModel.MaskCoverVisible), raised);
+        Assert.Contains(nameof(PageCardViewModel.MaskBlocksVisible), raised);
+        Assert.Contains(nameof(PageCardViewModel.MaskCoverWholeVisible), raised);
+    }
+
+    [Fact]
+    public async Task Mask_Hides_Cover_Zone_Buttons_And_Floats_Revealed_Band()
+    {
+        // 遮挡模式下按钮逐个自管显隐：释义列内容带里的按钮随罩层藏起（罩层面干净），
+        // 悬停露出带内的按钮浮出来可点（否则掀开了也点不到例句发音），盖回恢复隐藏
+        // 行集全部从释义列起（X=250px@200dpi=90pt）：≥3 行同列 CJK 起点边界才票得出（0.137），
+        // 两枚热点按钮右缘都压进罩层 → 开遮挡必须藏起
+        File.WriteAllBytes(_pdfPath, BlankPdf(1));
+        IReadOnlyList<OcrTextLine> lines =
+        [
+            new OcrTextLine("Unit Test Heading", 250, 150, 320, 26),      // 大行高 → Heading 热点
+            new OcrTextLine("English sentence here.", 250, 200, 300, 15), // 句尾热点
+            new OcrTextLine("中文释义一。", 250, 216, 120, 15),           // CJK 行只当释义：无热点、参与边界投票
+            new OcrTextLine("中文释义二。", 250, 234, 120, 15),
+            new OcrTextLine("中文释义三。", 250, 252, 120, 15),
+        ];
+        var vm = new ReaderPageViewModel(new StubTts(), new StubPlayer(), new StubOcr(lines), restoreRecent: false);
+        vm.SelectedDocument = new PdfDocumentSource(_pdfPath);
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        while (sw.ElapsedMilliseconds < 20_000)
+        {
+            if (vm.CurrentPages is { } pp && pp.Count > 0 && pp[0].Overlays.Count > 0) break;
+            await Task.Delay(50);
+        }
+        Assert.True(vm.CurrentPages is { } pages && pages[0].Overlays.Count > 0, "热点未落卡");
+        var card = vm.CurrentPages![0];
+        Assert.NotNull(card.MaskLeftFraction); // 边界没票出 = 行集不对，按钮显隐无从谈起
+
+        // 位图就位：150dpi A4 = 1275×1650，与热点/内容带的画布坐标同空间（默认 620×876 是占位值）
+        card.ImageWidthPx = 1275;
+        card.ImageHeightPx = 1650;
+
+        vm.IsMaskOn = true;
+        Assert.All(card.Overlays, o => Assert.False(o.MaskVisible,
+            $"遮挡开启后释义列按钮应隐藏：({o.X:F0},{o.Y:F0}) {o.Audio.Text}"));
+
+        // 模拟悬停露出：露出带内的按钮浮出来，带外的仍藏着
+        var btn = card.Overlays[0];
+        var other = card.Overlays[^1];
+        card.MaskReveal = new MaskRevealViewModel(0, btn.Y - 6, 500, 40, null!);
+        Assert.True(btn.MaskVisible, "露出带内的按钮应浮出来可点");
+        if (Math.Abs(other.Y - btn.Y) > 24) // 带高 40±4：行距 24px 以内分不出带内带外
+            Assert.False(other.MaskVisible, "露出带外的按钮应保持隐藏");
+
+        card.MaskReveal = null;
+        Assert.False(btn.MaskVisible, "盖回后按钮应恢复隐藏");
     }
 
     public void Dispose()
